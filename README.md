@@ -38,7 +38,7 @@ Quick reference of the available commands, you can run them in the order:
 | `roads-to-tiff` | Rasterize the configured road network into per-cell length estimates. | `SHP_ROAD_PATH`, `ALIGNED_TIFF_NIGHT_LIFE_OUT` | `roads_length_m.tif`, vector/raster previews. |
 | `natural-to-tiff` | Rasterize natural features (forests, reserves, etc.). | `SHP_NATURAL_PATH`, aligned reference raster. | `natural_feats.tif` and PNG previews. |
 | `waters-to-tiff` | Rasterize water bodies to the shared grid. | `SHP_WATER_PATH`, aligned reference raster. | `waters_length_m.tif` and PNG previews. |
-| `landuse-to-tiff` | Rasterize land-use polygons using `xrspatial` and convert coverage to pseudo-length. | `SHP_LANDUSE_PATH`, aligned reference raster. | `landuses_length_m.tif` and PNG previews. |
+| `landuse-to-tiff` | Rasterize land-use polygons to the shared grid. | `SHP_LANDUSE_PATH`, aligned reference raster. | `landuses_length_m.tif` and PNG previews. |
 | `run-simulation` | Stack the rasters selected by `GEO_FEATURES_DISTRIBUTION`, normalize them, and sample cells. | All rasters in `TIFF_OUT_DIR` whose stem matches the distribution list. | Plots in `data/output/tiffs/simulation_plots/` and printed sample statistics. |
 
 ### Typical workflow
