@@ -1,0 +1,8 @@
+[project]
+name = "geo-sim"
+version = "0.1.0"
+requires-python = ">=3.9"
+dependencies = ["typer>=0.12","rich>=13","numpy","matplotlib","rasterio"]
+
+[project.scripts]
+geo-sim = "geo_sim.cli.app:main"
