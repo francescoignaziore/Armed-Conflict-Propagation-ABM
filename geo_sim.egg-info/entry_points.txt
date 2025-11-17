@@ -1,2 +1,0 @@
-[console_scripts]
-geo-sim = geo_sim.cli.app:main

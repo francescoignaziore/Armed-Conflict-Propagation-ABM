@@ -1,9 +1,0 @@
-Metadata-Version: 2.4
-Name: geo-sim
-Version: 0.1.0
-Requires-Python: >=3.9
-Requires-Dist: typer>=0.12
-Requires-Dist: rich>=13
-Requires-Dist: numpy
-Requires-Dist: matplotlib
-Requires-Dist: rasterio
