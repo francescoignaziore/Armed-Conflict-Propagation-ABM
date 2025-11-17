@@ -5,9 +5,9 @@ Geo-Sim contains a small Python package plus command-line interface for aligning
 ## Installation
 
 ```bash
-cd geo-sim
 python -m venv .venv
 source .venv/bin/activate
+cd geo-sim
 pip install -e .
 # install extra spatial deps that are not declared in pyproject
 pip install geopandas shapely pyproj affine xarray xrspatial
