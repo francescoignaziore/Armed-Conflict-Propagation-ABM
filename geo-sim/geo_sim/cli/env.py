@@ -7,8 +7,8 @@ from gymnasium.spaces import Discrete, MultiDiscrete, Box
 
 from pettingzoo import ParallelEnv
 
-from .globals import SEED
-
+from geo_sim.config.env import SEED
+from geo_sim.config.env import KEY_OBS_FEATURES, KEY_OBS_OCCUPANCY
 
 class CSSMovementsEnv(ParallelEnv):
     metadata = {
@@ -83,7 +83,7 @@ class CSSMovementsEnv(ParallelEnv):
         self.time = 0
 
         # Occupancy
-        self.world_occupancy = np.zeros((self.G, self.H, self.W), dtype=np.int32)
+        self.world_occupancy = np.zeros((self.G, self.H, self.W), dtype=np.float32)
 
         # Choose some sparsity factor; tweak as you wish
         sparsity = 100  # K ≈ (H*W)/100 non-zero cells per group
@@ -103,12 +103,12 @@ class CSSMovementsEnv(ParallelEnv):
 
         # World features: dummy normal
         self.world_features = self.np_random.normal(
-            loc=0.0, scale=1.0, size=(self.F_W, self.H, self.W)
+            loc=0.0, scale=1.0, size=(self.F_W, self.H, self.W), dtype=np.float32
         )
 
         # Group features: dummy normal
         self.group_features = self.np_random.normal(
-            loc=0.0, scale=1.0, size=(self.G, self.F_G)
+            loc=0.0, scale=1.0, size=(self.G, self.F_G), dtype=np.float32
         )
 
         # All agents active at reset
@@ -350,9 +350,11 @@ class CSSMovementsEnv(ParallelEnv):
 
     def _get_observation(self, agent):
         # For now: each agent sees the entire occupancy grid and world features
+        i_agent = self._agent_index(agent)
         return {
-            "occupancy": self.world_occupancy.copy(),
-            "features": self.world_features.copy(),
+            KEY_OBS_OCCUPANCY: self.world_occupancy.copy(),
+            KEY_OBS_FEATURES: self.world_features.copy(),
+            KEY_OBS_FEATURES_GROUP: self.group_features.copy()
         }
 
     def observation_space(self, agent):
