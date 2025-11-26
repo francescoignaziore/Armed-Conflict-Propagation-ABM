@@ -1,0 +1,8 @@
+geopandas 
+shapely 
+pyproj 
+affine 
+xarray 
+xarray-spatial
+# xrspatial
+pettingzoo
