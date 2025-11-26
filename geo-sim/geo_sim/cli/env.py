@@ -10,7 +10,7 @@ from pettingzoo import ParallelEnv
 from .globals import SEED
 
 
-class CSSMovements(ParallelEnv):
+class CSSMovementsEnv(ParallelEnv):
     metadata = {
         "name": "css_movements_v0",
     }
