@@ -1,6 +1,10 @@
 SEED = 31919
 
-# Keys for observation dictionary
+# Initialization
+MAX_INIT_VAL = 255
+
+# Observations
+## Keys for observation dictionary
 KEY_OBS_OCCUPANCY = "occupancy"
 KEY_OBS_FEATURES_LOCATION  = "features"
 KEY_OBS_FEATURES_GROUP  = "group"
