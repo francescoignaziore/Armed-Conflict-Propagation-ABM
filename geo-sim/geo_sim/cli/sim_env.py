@@ -1,3 +1,4 @@
+import numpy as np
 from geo_sim.cli.env import CSSMovementsEnv
 # Obs constants
 from geo_sim.config.env import KEY_OBS_FEATURES_LOCATION, KEY_OBS_FEATURES_GROUP, KEY_OBS_OCCUPANCY
@@ -22,10 +23,7 @@ def group_policy(obs, info, group):
     H,W = occupied_by_us.shape
 
     # Zero padding for bound-safe observation masking
-    F_W = cell_features.shape[0]
     pad = MASK_RADIUS
-    mask_diameter = 2 * MASK_RADIUS + 1
-    # D_MASK = 2*MASK_RADIUS + 1
     
     cell_occupancy_padded = np.pad(
         cell_occupancy,
@@ -53,6 +51,7 @@ def group_policy(obs, info, group):
                 hp - pad : hp + pad + 1,
                 wp - pad : wp + pad + 1,
             ] # (G, D_MASK, D_MASK)
+            # D_MASK = 2*MASK_RADIUS + 1
 
             masked_features = cell_features_padded[
                 :,
@@ -86,14 +85,6 @@ while True:
     base_group = env.agents[0]
     obs = observations[base_group]
     info = infos[base_group]
-    
-    occupancy_mask = occupancy > 0 # (G, H, W) in {0,1}
-    is_occupied = np.sum(, axis=0)  # (H, W)
-    assert len(occupancy.shape) == 3, occupancy.shape
-    G,H,W = occupancy.shape
-    for x in range(H):
-        for y in range(W):
-
 
     for agent in env.agents:              
         obs = observations[agent]
