@@ -12,3 +12,7 @@ KEY_OBS_FEATURES_GROUP  = "group"
 # Action
 ACTION_VALUE_DEFAULT = 1
 MASK_RADIUS = 10
+
+# World Dynamics
+## Occupancy
+MAX_OCCUPANCY_GAIN = 2.00
