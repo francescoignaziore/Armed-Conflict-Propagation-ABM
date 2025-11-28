@@ -9,9 +9,20 @@ from pettingzoo import ParallelEnv
 
 from geo_sim.config.env import SEED
 from geo_sim.config.env import MAX_INIT_VAL
-from geo_sim.config.env import KEY_OBS_FEATURES, KEY_OBS_OCCUPANCY, KEY_OBS_FEATURES_GROUP
+from geo_sim.config.env import (
+    KEY_OBS_FEATURES_LOCATION,
+    KEY_OBS_OCCUPANCY,
+    KEY_OBS_FEATURES_GROUP,
+)
 from geo_sim.config.env import MAX_OCCUPANCY_GAIN
-from geo_sim.config.features import FEATURES_SPEC, FeatureKey, GeoFeatureIdx, GrpFeatureIdx, GeoGrpFeatureIdx
+from geo_sim.config.features import (
+    FEATURES_SPEC,
+    FeatureKey,
+    GeoFeatureIdx,
+    GrpFeatureIdx,
+    GeoGrpFeatureIdx,
+)
+
 
 class CSSMovementsEnv(ParallelEnv):
     metadata = {
@@ -37,9 +48,9 @@ class CSSMovementsEnv(ParallelEnv):
 
         # World state
         self.world_occupancy = None  # (G, H, W)
-        self.geo_features = None     # (F_GEO, H, W)
-        self.grp_features = None     # (G, F_GRP)
-        self.geo_grp_features = None # (G, F_GEO_GRP, H, W)
+        self.geo_features = None  # (F_GEO, H, W)
+        self.grp_features = None  # (G, F_GRP)
+        self.geo_grp_features = None  # (G, F_GEO_GRP, H, W)
 
         # RNG
         self.np_random = np.random.default_rng(self.seed)
@@ -49,7 +60,7 @@ class CSSMovementsEnv(ParallelEnv):
         self.possible_agents = self.agents[:]
 
         # For simplicity, we assume max strength per cell = 100
-        self.max_strength = 100 # TODO(L): Replace, dummy only
+        self.max_strength = 100  # TODO(L): Replace, dummy only
         self._make_action_space()
 
     # ---------------------------------------------------------------------
@@ -61,12 +72,14 @@ class CSSMovementsEnv(ParallelEnv):
         directions (up/right/down/left/stay).
 
         For each cell (x, y), the 5 actions are softmax logits that
-        indicate how much to move in which direction 
+        indicate how much to move in which direction
         from the available resources at the current cell.
         """
-        
+
         # NOTE (L):
-        self._action_space = Box(low=0.0, high=1.0, shape=(self.H, self.W, 5), dtype=np.float32)
+        self._action_space = Box(
+            low=0.0, high=1.0, shape=(self.H, self.W, 5), dtype=np.float32
+        )
 
     # ---------------------------------------------------------------------
     # PettingZoo API: reset
@@ -97,7 +110,9 @@ class CSSMovementsEnv(ParallelEnv):
 
             for g in range(self.G):
                 # Sample K distinct flat indices
-                flat_indices = self.np_random.choice(self.H * self.W, size=K, replace=False)
+                flat_indices = self.np_random.choice(
+                    self.H * self.W, size=K, replace=False
+                )
                 xs = flat_indices // self.W
                 ys = flat_indices % self.W
 
@@ -111,7 +126,10 @@ class CSSMovementsEnv(ParallelEnv):
 
         # World features: dummy normal
         self.geo_features = self.np_random.integers(
-            low=0, high=MAX_INIT_VAL + 1, size=(self.F_GEO, self.H, self.W), dtype=np.int32
+            low=0,
+            high=MAX_INIT_VAL + 1,
+            size=(self.F_GEO, self.H, self.W),
+            dtype=np.int32,
         ).astype(np.float32)
 
         # Group features: dummy normal
@@ -168,23 +186,21 @@ class CSSMovementsEnv(ParallelEnv):
         return FEATURES_SPEC.get(key).absorption_rate()
 
     def _resource_absorption(self):
-        occupancy = self.world_occupancy # (G,H,W)
-        occupancy_total = np.sum(occupancy, axis=0, keepdims=True) # (1,H,W)
-        remaining = 1 - occupancy_total # (1,H,W)
+        occupancy = self.world_occupancy  # (G,H,W)
+        occupancy_total = np.sum(occupancy, axis=0, keepdims=True)  # (1,H,W)
+        remaining = 1 - occupancy_total  # (1,H,W)
 
         occupied = occupancy_total > 0
         occupancy_ratio = np.divide(
-            occupancy, 
-            occupancy_total, 
-            out=np.zeros_like(occupancy), 
-            where=occupied
-            )
+            occupancy, occupancy_total, out=np.zeros_like(occupancy), where=occupied
+        )
         max_absorption_rate = self._get_absorption_rate(FeatureKey.RESOURCES)
         max_absorption = max_absorption_rate * remaining * occupancy_ratio
 
-        self.world_occupancy = np.minimum(MAX_OCCUPANCY_GAIN*occupancy, occupancy + max_absorption)
+        self.world_occupancy = np.minimum(
+            MAX_OCCUPANCY_GAIN * occupancy, occupancy + max_absorption
+        )
 
-    
     # ---------------------------------------------------------------------
     # Group interaction for collisions
     # ---------------------------------------------------------------------
@@ -260,11 +276,11 @@ class CSSMovementsEnv(ParallelEnv):
             # ratios: direction ratios with shape (H,W,5)
             g = self._group_index(group)
 
-            # Occupancy ratios for the current group 
-            g_occupancy = self.world_occupancy[g] # (H,W)
+            # Occupancy ratios for the current group
+            g_occupancy = self.world_occupancy[g]  # (H,W)
 
             # Ratio for each direction
-            ratio_sum = np.sum(ratios, axis=-1) # (H,W)
+            ratio_sum = np.sum(ratios, axis=-1)  # (H,W)
 
             ## 0. Assert that the five ratios sum to 1
             # assert ratio_sum <= 1, ratio_sum # NOTE (L): For debugging.
@@ -273,44 +289,52 @@ class CSSMovementsEnv(ParallelEnv):
             if np.any(rescale_mask):
                 # NOTE (L): Div by zero cannot occur here, by definition of rescale_mask
                 ratios[rescale_mask] /= ratio_sum[rescale_mask]
-                
-            ratio_up    = ratios[:, :, 0] # (H,W)
-            ratio_right = ratios[:, :, 1] # (H,W)
-            ratio_down  = ratios[:, :, 2] # (H,W)
-            ratio_left  = ratios[:, :, 3] # (H,W)
-            ratio_stay  = ratios[:, :, 4] # (H,W)
 
-            ## 1. Groups move their resources 
-            g_resources = self.geo_features[GeoFeatureIdx.RESOURCES] * g_occupancy # (H,W), float32
+            ratio_up = ratios[:, :, 0]  # (H,W)
+            ratio_right = ratios[:, :, 1]  # (H,W)
+            ratio_down = ratios[:, :, 2]  # (H,W)
+            ratio_left = ratios[:, :, 3]  # (H,W)
+            ratio_stay = ratios[:, :, 4]  # (H,W)
+
+            ## 1. Groups move their resources
+            g_resources = (
+                self.geo_features[GeoFeatureIdx.RESOURCES] * g_occupancy
+            )  # (H,W), float32
             ### Store moved resources
-            g_resources_next = self.geo_grp_features[g, GeoGrpFeatureIdx.RESOURCES] # (H,W)
+            g_resources_next = self.geo_grp_features[
+                g, GeoGrpFeatureIdx.RESOURCES
+            ]  # (H,W)
 
-            g_resources_next[:,:] = ratio_stay[:,:] * g_resources[:,:] # (H,W)
-            
-            # NOTE (L): We could enforce that no resources "leave" the world. 
+            g_resources_next[:, :] = ratio_stay[:, :] * g_resources[:, :]  # (H,W)
+
+            # NOTE (L): We could enforce that no resources "leave" the world.
             # up: from (x, y) -> (x-1, y)
-            g_resources_next[:-1,:] += ratio_up[1:,:] * g_resources[1:,:]
+            g_resources_next[:-1, :] += ratio_up[1:, :] * g_resources[1:, :]
             # down: from (x, y) -> (x+1, y)
-            g_resources_next[1:,:] += ratio_down[:-1,:] * g_resources[:-1,:]
+            g_resources_next[1:, :] += ratio_down[:-1, :] * g_resources[:-1, :]
             # left: from (x, y) -> (x, y-1)
-            g_resources_next[:,:-1] += ratio_left[:,1:] * g_resources[:,1:]
+            g_resources_next[:, :-1] += ratio_left[:, 1:] * g_resources[:, 1:]
             # right: from (x, y) -> (x, y+1)
-            g_resources_next[:,1:] += ratio_right[:,:-1] * g_resources[:,:-1]
-            
+            g_resources_next[:, 1:] += ratio_right[:, :-1] * g_resources[:, :-1]
+
         # 2. Update total resources and occupancy distribution of each cell
-        group_resources = self.geo_grp_features[:, GeoGrpFeatureIdx.RESOURCES] # (G,H,W)
-        group_resources_total = np.sum(group_resources, axis=0) # (H,W)
+        group_resources = self.geo_grp_features[
+            :, GeoGrpFeatureIdx.RESOURCES
+        ]  # (G,H,W)
+        group_resources_total = np.sum(group_resources, axis=0)  # (H,W)
 
         ## Remaining geo resources that are not possessed by any group yet
-        occupancy = self.world_occupancy # (G,H,W)
-        occupancy_total = np.sum(occupancy, axis=0) # (H,W)
-        remaining = 1 - occupancy_total # (H,W)
-        remaining_geo_resources = self.geo_features[GeoFeatureIdx.RESOURCES] * remaining # (H,W), float32
-        resources_total = group_resources_total + remaining_geo_resources # (H,W)
+        occupancy = self.world_occupancy  # (G,H,W)
+        occupancy_total = np.sum(occupancy, axis=0)  # (H,W)
+        remaining = 1 - occupancy_total  # (H,W)
+        remaining_geo_resources = (
+            self.geo_features[GeoFeatureIdx.RESOURCES] * remaining
+        )  # (H,W), float32
+        resources_total = group_resources_total + remaining_geo_resources  # (H,W)
 
         ## Overwrite geo resources with new resources after groups moved some of their resources
         self.geo_features[GeoFeatureIdx.RESOURCES] = resources_total
-        
+
         ## Recompute occupancy ratios
         for agent in self.possible_agents:
             g = self._group_index(agent)
@@ -318,7 +342,7 @@ class CSSMovementsEnv(ParallelEnv):
                 group_resources[g],
                 resources_total,
                 out=self.world_occupancy[g],
-                where=resources_total > 0
+                where=resources_total > 0,
             )
 
         # Sanity check: no negative occupancies
@@ -341,7 +365,7 @@ class CSSMovementsEnv(ParallelEnv):
         3. Resource absorption
         Groups absorp resources from the cells they occupy
         """
-        
+
         if not self.agents:
             # No active agents; environment is done
             return {}, {}, {}, {}, {}
@@ -349,7 +373,7 @@ class CSSMovementsEnv(ParallelEnv):
         self.time += 1
 
         # 1. Groups move their resources
-        self._move_resources(actions)    
+        self._move_resources(actions)
 
         # 2. Group interaction
         ## Resolve collisions: cells where ≥2 groups have non-zero occupancy
@@ -361,10 +385,12 @@ class CSSMovementsEnv(ParallelEnv):
 
         # 3. Resource absorption
         self._resource_absorption()
-        
+
         # Build return values (simple global observation, dummy rewards)
         observations = {agent: self._get_observation(agent) for agent in self.agents}
-        rewards = {agent: 0.0 for agent in self.agents} # TODO(L): Total global strength per agent
+        rewards = {
+            agent: 0.0 for agent in self.agents
+        }  # TODO(L): Total global strength per agent
         terminations = {agent: False for agent in self.agents}
         truncations = {agent: False for agent in self.agents}
         infos = {agent: {} for agent in self.agents}
@@ -382,19 +408,17 @@ class CSSMovementsEnv(ParallelEnv):
             print(f"  Group {g}: total strength = {total}")
 
     def _get_observation(self, agent):
-        # For now: each agent sees the entire occupancy grid and world features
-        i_agent = self._group_index(agent)
         return {
             KEY_OBS_OCCUPANCY: self.world_occupancy.copy(),
-            KEY_OBS_FEATURES: self.geo_features.copy(),
-            KEY_OBS_FEATURES_GROUP: self.grp_features.copy()
+            KEY_OBS_FEATURES_LOCATION: self.geo_features.copy(),
+            KEY_OBS_FEATURES_GROUP: self.grp_features.copy(),
         }
 
     def observation_space(self, agent):
         """
         NOTE:
         In proper PettingZoo, this should return a Gymnasium Space, not the
-        actual observation values. 
+        actual observation values.
         TODO: Implement masked observation
         """
         return self._get_observation(agent)
