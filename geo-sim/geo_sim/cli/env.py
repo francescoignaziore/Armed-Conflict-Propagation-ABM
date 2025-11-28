@@ -69,6 +69,9 @@ class CSSMovementsEnv(ParallelEnv):
         self.max_strength = 100  # TODO(L): Replace, dummy only
         self._make_action_space()
 
+    def _precompute_kernels(self, radius=MASK_RADIUS):
+        self._accum_kernel = get_gauss_kernel(MASK_RADIUS) # (D,D) 
+
     def _prepare_padded_views(self, pad=MASK_RADIUS):
         """
         To avoid recomputing the padding for each group, 
@@ -181,7 +184,7 @@ class CSSMovementsEnv(ParallelEnv):
             return agent
         return int(agent.split("_")[-1])
 
-    def _get_group_strength_local(self, g, x, y, compute_padding=True):
+    def _get_group_strength_local(self, g, x, y, compute_padding=True, compute_kernel=True):
         """
         Compute local strength of group g at index [x,y].
         The current implementation aggregates the local resources based on
@@ -214,6 +217,8 @@ class CSSMovementsEnv(ParallelEnv):
                 constant_values=0.0
             )
         else:
+            assert hasattr(self, "world_occupancy_padded")
+            assert hasattr(self, "geo_resources_padded")
             world_occupancy_padded = self.world_occupancy_padded[g]
             geo_resources_padded = self.geo_resources_padded
         
@@ -228,7 +233,8 @@ class CSSMovementsEnv(ParallelEnv):
         local_occupancy = world_occupancy_padded[x_low:x_high, y_low:y_high] # (D,D)
         local_resources = geo_resources_padded[x_low:x_high, y_low:y_high] # (D,D)
         g_resources_local = local_resources * local_occupancy # (D,D)
-        K = get_gauss_kernel(MASK_RADIUS) # (D,D)
+
+        K = get_gauss_kernel(MASK_RADIUS) if compute_kernel else self._accum_kernel # (D,D)
         g_resources_local *= K # (D,D)
         strength = np.sum(g_resources_local)
         return strength
