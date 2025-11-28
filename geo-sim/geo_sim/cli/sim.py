@@ -7,6 +7,7 @@ from scipy.spatial import cKDTree
 from scipy.stats import gaussian_kde
 from scipy.sparse.csgraph import minimum_spanning_tree
 from scipy.spatial.distance import pdist, squareform
+import os
 
 import matplotlib
 
@@ -661,6 +662,7 @@ def run_simulation(N_samples: int = 10000):
     """
     print(f"Running Multi-Strategy Simulation with N={N_samples}...")
     debug_dir = TIFF_OUT_DIR / "simulation_plots"
+    os.makedirs(debug_dir, exist_ok=True)
 
     # 1. Load Data
     tifs = TIFF_OUT_DIR.glob("*.tif")
@@ -695,6 +697,7 @@ def run_simulation(N_samples: int = 10000):
         plt.scatter(cols, rows, s=1, c="red", alpha=0.5)
         plt.title(f"Sample Map: {strat_name}")
         plt.axis("off")
+        
         plt.savefig(debug_dir / f"map_{strat_name}.png", dpi=100)
         plt.close()
 
