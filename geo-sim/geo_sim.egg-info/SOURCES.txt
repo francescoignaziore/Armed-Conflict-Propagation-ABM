@@ -9,11 +9,16 @@ geo_sim.egg-info/top_level.txt
 geo_sim/cli/__init__.py
 geo_sim/cli/app.py
 geo_sim/cli/buildings.py
+geo_sim/cli/env.py
 geo_sim/cli/landuse.py
 geo_sim/cli/natural.py
 geo_sim/cli/roads.py
 geo_sim/cli/sim.py
+geo_sim/cli/sim_env.py
+geo_sim/cli/spatial_accumulation.py
 geo_sim/cli/tiff_alignment.py
 geo_sim/cli/water.py
 geo_sim/config/consts.py
+geo_sim/config/env.py
+geo_sim/config/features.py
 geo_sim/config/paths.py

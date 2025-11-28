@@ -14,13 +14,18 @@ from geo_sim.config.env import (
     KEY_OBS_OCCUPANCY,
     KEY_OBS_FEATURES_GROUP,
 )
-from geo_sim.config.env import MAX_OCCUPANCY_GAIN
+from geo_sim.config.env import MAX_OCCUPANCY_GAIN, MASK_RADIUS
 from geo_sim.config.features import (
     FEATURES_SPEC,
     FeatureKey,
     GeoFeatureIdx,
     GrpFeatureIdx,
     GeoGrpFeatureIdx,
+)
+
+from geo_sim.cli.spatial_accumulation import (
+    get_gauss_kernel,
+    get_gauss_dijkstra_kernel
 )
 
 
@@ -63,6 +68,24 @@ class CSSMovementsEnv(ParallelEnv):
         # For simplicity, we assume max strength per cell = 100
         self.max_strength = 100  # TODO(L): Replace, dummy only
         self._make_action_space()
+
+    def _prepare_padded_views(self, pad=MASK_RADIUS):
+        """
+        To avoid recomputing the padding for each group, 
+        this helper function can be called to buffer it once.
+        """
+        self.world_occupancy_padded = np.pad(
+            self.world_occupancy,
+            pad_width=((0, 0), (pad, pad), (pad, pad)),
+            mode="constant",
+            constant_values=0.0,
+        )
+        self.geo_resources_padded = np.pad(
+            self.geo_features[FeatureKey.RESOURCES],
+            pad_width=((pad, pad), (pad, pad)),
+            mode="constant",
+            constant_values=0.0,
+        )
 
     # ---------------------------------------------------------------------
     # Helpers to build spaces
@@ -157,6 +180,64 @@ class CSSMovementsEnv(ParallelEnv):
         if isinstance(agent, int):
             return agent
         return int(agent.split("_")[-1])
+
+    def _get_group_strength_local(self, g, x, y, compute_padding=True):
+        """
+        Compute local strength of group g at index [x,y].
+        The current implementation aggregates the local resources based on
+        - the occupancy fractions of group g
+        - a kernel that downweighs resources by distance to [x,y]
+
+        compute_padding: bool, whether the padded occupancy/features 
+            have already been computed with self._prepare_padded_views 
+            and are already available in self.<...>_padded
+        """
+        # D = 2*MASK_RADIUS + 1
+        ## 1. Bound-safe aggregation
+        
+        ### 1a. Padding
+        pad = MASK_RADIUS
+        world_occupancy_padded = None
+        geo_resources_padded = None
+
+        if compute_padding:
+            world_occupancy_padded = np.pad(
+                self.world_occupancy[g],
+                pad_width = ((pad,pad),(pad,pad)),
+                mode="constant",
+                constant_values=0.0
+            )
+            geo_resources_padded = np.pad(
+                self.geo_features[FeatureKey.RESOURCES],
+                pad_width = ((pad,pad),(pad,pad)),
+                mode="constant",
+                constant_values=0.0
+            )
+        else:
+            world_occupancy_padded = self.world_occupancy_padded[g]
+            geo_resources_padded = self.geo_resources_padded
+        
+        ### 1b. Index slicing
+        xp = x+pad
+        yp = y+pad
+        x_low = xp-pad
+        x_high = xp+pad+1
+        y_low = yp-pad
+        y_high = yp+pad+1
+
+        local_occupancy = world_occupancy_padded[x_low:x_high, y_low:y_high] # (D,D)
+        local_resources = geo_resources_padded[x_low:x_high, y_low:y_high] # (D,D)
+        g_resources_local = local_resources * local_occupancy # (D,D)
+        K = get_gauss_kernel(MASK_RADIUS) # (D,D)
+        g_resources_local *= K # (D,D)
+        strength = np.sum(g_resources_local)
+        return strength
+
+    def _get_group_strength_total(self, g):
+        total_occupancy = self.world_occupancy[g] # (H,W)
+        total_resources = self.geo_features[FeatureKey.RESOURCES] # (H,W)
+        strength = np.sum(total_occupancy*total_resources)
+        return strength
 
     def _get_group_strength(self, g, x, y):
         # TODO: Replace dummy accumulation
@@ -380,6 +461,7 @@ class CSSMovementsEnv(ParallelEnv):
         self._move_resources(actions)
 
         # 2. Group interaction
+        # self._prepare_padded_views() # Precompute padding of grid observations once
         ## Resolve collisions: cells where ≥2 groups have non-zero occupancy
         is_occupied = self.world_occupancy > 0  # (G, H, W)
         num_occupiers = np.sum(is_occupied, axis=0)  # (H, W)
