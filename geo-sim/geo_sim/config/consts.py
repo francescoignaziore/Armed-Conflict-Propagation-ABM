@@ -1,4 +1,5 @@
 # geo_sim/config/consts.py
+from enum import Enum, auto
 # Target projected CRS for night lights (meters)
 OUTPUT_CRS_NIGHT_LIGHTS = "EPSG:3857"  # or your preferred equal-area CRS
 
@@ -22,6 +23,15 @@ SIMULATION_COMBINATIONS = [
     ["pop", "roads"],
     ["pop", "viirs", "roads"],
 ]
+
+class GroupInitStrategy(Enum):
+    UNIFORM = auto()
+    POP = auto()
+    POP_VIIRS = auto()
+    ROADS = auto()
+    POP_ROADS = auto()
+    POP_VIIRS_ROADS = auto()
+
 # --- tuneables (shp files) ---
 _SUPER_K = 1  # supersampling factor
 _ALL_TOUCHED = True  # conservative coverage

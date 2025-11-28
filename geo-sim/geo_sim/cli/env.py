@@ -3,9 +3,12 @@ import random
 from copy import copy
 
 import numpy as np
-from gymnasium.spaces import Discrete, MultiDiscrete, Box
+from gymnasium.spaces import Box
 
 from pettingzoo import ParallelEnv
+
+from geo_sim.cli.sim import init_grid
+from geo_sim.config.consts import GroupInitStrategy
 
 from geo_sim.config.env import SEED
 from geo_sim.config.env import MAX_INIT_VAL
@@ -21,6 +24,7 @@ from geo_sim.config.features import (
     GeoFeatureIdx,
     GrpFeatureIdx,
     GeoGrpFeatureIdx,
+    ABSORPTION_INIT
 )
 
 from geo_sim.cli.spatial_accumulation import (
@@ -68,6 +72,9 @@ class CSSMovementsEnv(ParallelEnv):
         # For simplicity, we assume max strength per cell = 100
         self.max_strength = 100  # TODO(L): Replace, dummy only
         self._make_action_space()
+
+    def _precompute_kernels(self, radius=MASK_RADIUS):
+        self._accum_kernel = get_gauss_kernel(MASK_RADIUS) # (D,D) 
 
     def _prepare_padded_views(self, pad=MASK_RADIUS):
         """
@@ -124,32 +131,18 @@ class CSSMovementsEnv(ParallelEnv):
 
         self.time = 0
 
-        # Occupancy
+        # Spawn each group on one location on the grid
+        H,W, group_init_x, group_init_y = init_grid(self.G, sampling_strategy=GroupInitStrategy.POP_VIIRS_ROADS)
+        self.H = H
+        self.W = W
+        
+        ## Initialize occupancy
         self.world_occupancy = np.zeros((self.G, self.H, self.W), dtype=np.float32)
+        group_indices = np.arange(self.G)
+        self.world_occupancy[group_indices, group_init_x, group_init_y] = ABSORPTION_INIT
 
         # Terrain ruggedness (binary relation between contiguous geocells)
         self.world_ruggedness = np.ones((self.H, self.W, 4), dtype=np.int32)
-
-        def _reset_world_occupancy():
-            # Choose some sparsity factor; tweak as you wish
-            sparsity = 100  # K ≈ (H*W)/100 non-zero cells per group
-            K = max(1, (self.H * self.W) // sparsity)
-
-            for g in range(self.G):
-                # Sample K distinct flat indices
-                flat_indices = self.np_random.choice(
-                    self.H * self.W, size=K, replace=False
-                )
-                xs = flat_indices // self.W
-                ys = flat_indices % self.W
-
-                # Occupancy uniform from 1 to 100
-                vals = self.np_random.integers(
-                    low=1, high=self.max_strength + 1, size=K, dtype=np.int32
-                )
-                self.world_occupancy[g, xs, ys] = vals
-
-        _reset_world_occupancy()
 
         # World features: dummy normal
         self.geo_features = self.np_random.integers(
@@ -181,7 +174,7 @@ class CSSMovementsEnv(ParallelEnv):
             return agent
         return int(agent.split("_")[-1])
 
-    def _get_group_strength_local(self, g, x, y, compute_padding=True):
+    def _get_group_strength_local(self, g, x, y, compute_padding=True, compute_kernel=True):
         """
         Compute local strength of group g at index [x,y].
         The current implementation aggregates the local resources based on
@@ -214,6 +207,8 @@ class CSSMovementsEnv(ParallelEnv):
                 constant_values=0.0
             )
         else:
+            assert hasattr(self, "world_occupancy_padded")
+            assert hasattr(self, "geo_resources_padded")
             world_occupancy_padded = self.world_occupancy_padded[g]
             geo_resources_padded = self.geo_resources_padded
         
@@ -228,7 +223,8 @@ class CSSMovementsEnv(ParallelEnv):
         local_occupancy = world_occupancy_padded[x_low:x_high, y_low:y_high] # (D,D)
         local_resources = geo_resources_padded[x_low:x_high, y_low:y_high] # (D,D)
         g_resources_local = local_resources * local_occupancy # (D,D)
-        K = get_gauss_kernel(MASK_RADIUS) # (D,D)
+
+        K = get_gauss_kernel(MASK_RADIUS) if compute_kernel else self._accum_kernel # (D,D)
         g_resources_local *= K # (D,D)
         strength = np.sum(g_resources_local)
         return strength
