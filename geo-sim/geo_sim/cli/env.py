@@ -37,6 +37,7 @@ class CSSMovementsEnv(ParallelEnv):
 
         # World state
         self.world_occupancy = None  # (G, H, W)
+        self.world_ruggedness = None  # (H, W, 4)
         self.geo_features = None     # (F_GEO, H, W)
         self.grp_features = None     # (G, F_GRP)
         self.geo_grp_features = None # (G, F_GEO_GRP, H, W)
@@ -89,6 +90,9 @@ class CSSMovementsEnv(ParallelEnv):
 
         # Occupancy
         self.world_occupancy = np.zeros((self.G, self.H, self.W), dtype=np.float32)
+
+        # Terrain ruggedness (binary relation between contiguous geocells)
+        self.world_ruggedness = np.ones((self.H, self.W, 4), dtype=np.int32)
 
         def _reset_world_occupancy():
             # Choose some sparsity factor; tweak as you wish
