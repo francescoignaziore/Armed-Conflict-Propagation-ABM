@@ -3,9 +3,12 @@ import random
 from copy import copy
 
 import numpy as np
-from gymnasium.spaces import Discrete, MultiDiscrete, Box
+from gymnasium.spaces import Box
 
 from pettingzoo import ParallelEnv
+
+from geo_sim.cli.sim import init_grid
+from geo_sim.config.consts import GroupInitStrategy
 
 from geo_sim.config.env import SEED
 from geo_sim.config.env import MAX_INIT_VAL
@@ -21,6 +24,7 @@ from geo_sim.config.features import (
     GeoFeatureIdx,
     GrpFeatureIdx,
     GeoGrpFeatureIdx,
+    ABSORPTION_INIT
 )
 
 from geo_sim.cli.spatial_accumulation import (
@@ -127,32 +131,18 @@ class CSSMovementsEnv(ParallelEnv):
 
         self.time = 0
 
-        # Occupancy
+        # Spawn each group on one location on the grid
+        H,W, group_init_x, group_init_y = init_grid(self.G, sampling_strategy=GroupInitStrategy.POP_VIIRS_ROADS)
+        self.H = H
+        self.W = W
+        
+        ## Initialize occupancy
         self.world_occupancy = np.zeros((self.G, self.H, self.W), dtype=np.float32)
+        group_indices = np.arange(self.G)
+        self.world_occupancy[group_indices, group_init_x, group_init_y] = ABSORPTION_INIT
 
         # Terrain ruggedness (binary relation between contiguous geocells)
         self.world_ruggedness = np.ones((self.H, self.W, 4), dtype=np.int32)
-
-        def _reset_world_occupancy():
-            # Choose some sparsity factor; tweak as you wish
-            sparsity = 100  # K ≈ (H*W)/100 non-zero cells per group
-            K = max(1, (self.H * self.W) // sparsity)
-
-            for g in range(self.G):
-                # Sample K distinct flat indices
-                flat_indices = self.np_random.choice(
-                    self.H * self.W, size=K, replace=False
-                )
-                xs = flat_indices // self.W
-                ys = flat_indices % self.W
-
-                # Occupancy uniform from 1 to 100
-                vals = self.np_random.integers(
-                    low=1, high=self.max_strength + 1, size=K, dtype=np.int32
-                )
-                self.world_occupancy[g, xs, ys] = vals
-
-        _reset_world_occupancy()
 
         # World features: dummy normal
         self.geo_features = self.np_random.integers(

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from enum import IntEnum, Enum, auto
 
 ABSORPTION_RATE_DEFAULT = 0.02
+ABSORPTION_INIT         = 0.02 # What fraction of a cell's resources is already owned by the group at initialization?
 
 class FeatureKey(Enum):
     RESOURCES = auto()

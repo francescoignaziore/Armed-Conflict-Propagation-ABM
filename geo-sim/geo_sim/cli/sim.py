@@ -14,7 +14,10 @@ matplotlib.use("Agg")  # HPC / headless
 import matplotlib.pyplot as plt
 
 from geo_sim.config.paths import TIFF_OUT_DIR
-from geo_sim.config.consts import SIMULATION_COMBINATIONS
+from geo_sim.config.consts import (
+    SIMULATION_COMBINATIONS,
+    GroupInitStrategy
+)
 
 # ---------------------------------------------------------------------------
 # Helpers: normalization
@@ -602,11 +605,52 @@ def plot_void_distribution(
     plt.savefig(out_dir / "comparison_void_dist.png", dpi=150)
     plt.close()
 
-
 # ---------------------------------------------------------------------------
 # Main Simulation
 # ---------------------------------------------------------------------------
 
+def init_grid(G: int, sampling_strategy=GroupInitStrategy.UNIFORM):
+    """
+    Initialize groups on the grid
+    The grid is currently loaded from a fixed path
+
+    Returns: H, W, rows, cols
+    - H,W: shape of the grid
+    - rows/cols: the x/y indices of the groups
+    """
+    # 1. Load Data
+    tifs = TIFF_OUT_DIR.glob("*.tif")
+    bank, master_mask = load_feature_bank(tifs)
+    H,W = master_mask.shape
+    if not bank:
+        print("No features found! Exiting.")
+        return
+
+    # 2. Sample groups
+    N_samples = G
+    rows, cols = None
+    if sampling_strategy==GroupInitStrategy.UNIFORM:
+        ## 2a. Uniform
+        rows, cols = sample_uniform(master_mask, N_samples)
+    elif sampling_strategy==GroupInitStrategy.POP:
+        combo = ['pop']
+        rows, cols = sample_strategy(combo, bank, master_mask, N_samples)
+    elif sampling_strategy==GroupInitStrategy.POP_VIIRS:
+        combo = ["pop", "viirs"]
+        rows, cols = sample_strategy(combo, bank, master_mask, N_samples)
+    elif sampling_strategy==GroupInitStrategy.POP_ROADS:
+        combo = ["pop", "roads"]
+        rows, cols = sample_strategy(combo, bank, master_mask, N_samples)
+    elif sampling_strategy==GroupInitStrategy.POP_VIIRS_ROADS:
+        combo = ["pop", "viirs", "roads"]
+        rows, cols = sample_strategy(combo, bank, master_mask, N_samples)
+    elif sampling_strategy==GroupInitStrategy.ROADS:
+        combo = ["roads"]
+        rows, cols = sample_strategy(combo, bank, master_mask, N_samples)
+    else:
+        raise NotImplementedError()
+    
+    return H,W,rows,cols
 
 def run_simulation(N_samples: int = 10000):
     """
