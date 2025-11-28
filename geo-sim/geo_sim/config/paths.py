@@ -2,8 +2,8 @@ from pathlib import Path
 
 CURRENT_DIR = Path(__file__).resolve().parent # geo-sim/geo_sim/config
 
-ROOT_PACKAGE = CURRENT_DIR.parents[2] # geo-sim
-ROOT_REPO = CURRENT_DIR.parents[3] # git repo
+ROOT_PACKAGE = CURRENT_DIR.parents[1] # geo-sim
+ROOT_REPO = CURRENT_DIR.parents[2] # git repo
 
 ROOT = ROOT_PACKAGE
 DATA_DIR = ROOT_REPO / "data" 
