@@ -11,13 +11,17 @@ from geo_sim.cli.sim import init_grid
 from geo_sim.config.consts import GroupInitStrategy
 
 from geo_sim.config.env import SEED
-from geo_sim.config.env import MAX_INIT_VAL
+# Initialization
+from geo_sim.config.env import INIT_MAX_VAL, INIT_RESOURCE_GAMMA
+# Obs keys
 from geo_sim.config.env import (
     KEY_OBS_FEATURES_LOCATION,
     KEY_OBS_OCCUPANCY,
     KEY_OBS_FEATURES_GROUP,
 )
+# World dynamics
 from geo_sim.config.env import MAX_OCCUPANCY_GAIN, MASK_RADIUS
+# Geo/Group Features
 from geo_sim.config.features import (
     FEATURES_SPEC,
     FeatureKey,
@@ -27,11 +31,11 @@ from geo_sim.config.features import (
     ABSORPTION_INIT
 )
 
+# Feature accumulation kernels
 from geo_sim.cli.spatial_accumulation import (
     get_gauss_kernel,
     get_gauss_dijkstra_kernel
 )
-
 
 class CSSMovementsEnv(ParallelEnv):
     metadata = {
@@ -176,6 +180,24 @@ class CSSMovementsEnv(ParallelEnv):
             low=0.0, high=1.0, shape=(self.H, self.W, 5), dtype=np.float32
         )
 
+    def _init_uniform_integers(self, arr, low=0, high=INIT_MAX_VAL):
+        arr[:] = self.np_random.integers(
+            low=low,
+            high=high,
+            size=arr.shape,
+            dtype=arr.dtype,
+        )
+    
+    def _init_uniform_float(self, arr, low=0, high=INIT_MAX_VAL):
+        arr[:] = self.np_random.uniform(
+            low=low,
+            high=high,
+            size=arr.shape
+        ).astype(arr.dtype, copy=False)
+
+    def _init_exponential(self, arr, gamma=1.0):
+        self.np_random.exponential(scale=1/gamma, size=arr.shape, out=arr)
+
     # ---------------------------------------------------------------------
     # PettingZoo API: reset
     # ---------------------------------------------------------------------
@@ -212,17 +234,22 @@ class CSSMovementsEnv(ParallelEnv):
         # Terrain ruggedness (binary relation between contiguous geocells)
         self.world_ruggedness = np.ones((self.H, self.W, 4), dtype=np.int32)
 
-        # World features: dummy normal
+        # World features
+        self.geo_features = np.zeros((self.F_GEO, self.H, self.W), dtype=np.float32)
+        self._init_exponential(self.geo_features[FeatureKey.RESOURCES], INIT_RESOURCE_GAMMA)
+
+
+        ## Initialize world resources
         self.geo_features = self.np_random.integers(
             low=0,
-            high=MAX_INIT_VAL + 1,
+            high=INIT_MAX_VAL + 1,
             size=(self.F_GEO, self.H, self.W),
             dtype=np.int32,
         ).astype(np.float32)
 
         # Group features: dummy normal
         self.grp_features = self.np_random.integers(
-            low=0, high=MAX_INIT_VAL + 1, size=(self.G, self.F_GRP), dtype=np.int32
+            low=0, high=INIT_MAX_VAL + 1, size=(self.G, self.F_GRP), dtype=np.int32
         ).astype(np.float32)
 
         # All agents active at reset
@@ -414,8 +441,12 @@ class CSSMovementsEnv(ParallelEnv):
 
         # At the end, either 0 or 1 non-zero group remains at (x, y)
         # In either case, world_occupancy is already updated.
-
-    def _group_conflict(self, x, y, g1, g2):
+    
+    def _group_merge_local(self, x, y, g1:int, g2:int, conflict:bool):
+        """
+        Two groups merge at a certain position.
+        `conflict` indicates whether they merge in a peaceful (False) or violent (True) way.
+        """
         A = self._get_group_strength_local(g1, x, y)
         B = self._get_group_strength_local(g2, x, y)
         g1_win_probability = A / (A+B)
