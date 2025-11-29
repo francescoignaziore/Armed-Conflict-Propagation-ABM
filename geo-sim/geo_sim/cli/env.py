@@ -205,6 +205,10 @@ class CSSMovementsEnv(ParallelEnv):
         group_indices = np.arange(self.G)
         self.world_occupancy[group_indices, group_init_x, group_init_y] = ABSORPTION_INIT
 
+        ## Reset group union structure
+        self.group_mother = np.arange(self.G, dtype=np.int32)
+        self.group_childs = [[i] for i in range(self.G)]
+
         # Terrain ruggedness (binary relation between contiguous geocells)
         self.world_ruggedness = np.ones((self.H, self.W, 4), dtype=np.int32)
 
