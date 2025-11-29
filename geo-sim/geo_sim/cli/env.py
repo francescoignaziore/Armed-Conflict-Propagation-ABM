@@ -422,9 +422,13 @@ class CSSMovementsEnv(ParallelEnv):
         winner, loser = g2, g1
         if np.random.uniform() < g1_win_probability:
             winner, loser = g1, g2
-        self.world_occupancy[winner][x][y] = max(0.0, self.world_occupancy[winner][x][y]-self.world_occupancy[loser][x][y])
+        if conflict:
+            self.world_occupancy[winner][x][y] = max(0.0, self.world_occupancy[winner][x][y]-self.world_occupancy[loser][x][y])
+        else:
+            self.world_occupancy[winner][x][y] = self.world_occupancy[winner][x][y]+self.world_occupancy[loser][x][y]
         self.world_occupancy[loser][x][y] = 0.0
         return winner
+
 
     def _move_resources(self, actions):
         """
