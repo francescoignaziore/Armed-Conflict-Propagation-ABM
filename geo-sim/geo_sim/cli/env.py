@@ -415,6 +415,17 @@ class CSSMovementsEnv(ParallelEnv):
         # At the end, either 0 or 1 non-zero group remains at (x, y)
         # In either case, world_occupancy is already updated.
 
+    def _group_conflict(self, x, y, g1, g2):
+        A = self._get_group_strength_local(g1, x, y)
+        B = self._get_group_strength_local(g2, x, y)
+        g1_win_probability = A / (A+B)
+        winner, loser = g2, g1
+        if np.random.uniform() < g1_win_probability:
+            winner, loser = g1, g2
+        self.world_occupancy[winner][x][y] = max(0.0, self.world_occupancy[winner][x][y]-self.world_occupancy[loser][x][y])
+        self.world_occupancy[loser][x][y] = 0.0
+        return winner
+
     def _move_resources(self, actions):
         """
         1. Each group moves the resources it owns.
