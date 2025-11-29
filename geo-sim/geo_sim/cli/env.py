@@ -62,6 +62,10 @@ class CSSMovementsEnv(ParallelEnv):
         self.grp_features = None     # (G, F_GRP)
         self.geo_grp_features = None # (G, F_GEO_GRP, H, W)
 
+        # Group union structure
+        self.group_mother = None
+        self.group_childs = None
+
         # RNG
         self.np_random = np.random.default_rng(self.seed)
 
@@ -75,6 +79,66 @@ class CSSMovementsEnv(ParallelEnv):
 
     def _precompute_kernels(self, radius=MASK_RADIUS):
         self._accum_kernel = get_gauss_kernel(MASK_RADIUS) # (D,D) 
+    
+    def _get_mother_group_idx(self, g):
+        # This emulates a Union Find structure
+        if self.group_mother[g] != g:
+            self.group_mother[g] = self._get_mother_group_idx(self.group_mother[g])
+            
+        return self.group_mother[g]
+    
+    def _set_mother_group_idx(self, g, mother):
+        self.group_mother[g] = mother
+
+    def _get_child_groups_idx(self, g):
+        return self.group_childs[g]
+
+    def _join_child_groups(self, g1, g2):
+        # assert isinstance(self.group_childs[g1], list)
+        self.group_childs[g1].extend(self.group_childs[g2])
+
+    def _merge_groups(self, g1, g2):
+        # NOTE(L): This merges g2 into g1 by default
+        # NOTE(L): We might want g1 to be the stronger group than g2, but not necessary
+        g2_mother = self._get_mother_group_idx(g2)
+        self._set_mother_group_idx(g2_mother, g1)
+        self._join_child_groups(g1, g2)
+
+    def _fragment_groups(self, g1, g2):
+        raise NotImplementedError()
+    
+    def _merge_group_features_total(self, g1, g2):
+        # NOTE(L): This merges g2 into g1 by default
+        # Precompute relative strength
+        strength_g1 = self._get_group_strength_total(g1)
+        strength_g2 = self._get_group_strength_total(g2)
+        strength_sum = strength_g1 + strength_g2
+        strength_g1_relative = strength_g1 / strength_sum
+        strength_g2_relative = strength_g2 / strength_sum
+        
+        # Merge all features
+        for feature_key in FeatureKey:
+            if feature_key not in FEATURES_SPEC:
+                continue
+            grp_feature_spec = FEATURES_SPEC[feature_key].grp
+            if grp_feature_spec is None:
+                continue
+            if grp_feature_spec.is_quantitative:
+                if grp_feature_spec.is_absolute:
+                    # Absolute feature, just add
+                    self.grp_features[g1][feature_key] += self.grp_features[g2][feature_key]
+                else:
+                    # Relative feature, compute weighted combination
+                    self.grp_features[g1][feature_key] = strength_g1_relative * self.grp_features[g1][feature_key] + strength_g2_relative * self.grp_features[g2][feature_key]
+            else:
+                # Non-quantitative feature
+                # Randomly take value from g1/g2 with probability proportional to their strength
+                if np.random.uniform() < strength_g2_relative:
+                    self.grp_features[g1][feature_key] = self.grp_features[g2][feature_key] 
+    
+    def _fragment_group_resources(self, g1, g2):
+        raise NotImplementedError()
+
 
     def _prepare_padded_views(self, pad=MASK_RADIUS):
         """
