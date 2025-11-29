@@ -158,7 +158,7 @@ class CSSMovementsEnv(ParallelEnv):
             constant_values=0.0,
         )
         self.geo_resources_padded = np.pad(
-            self.geo_features[FeatureKey.RESOURCES],
+            self.geo_features[GeoFeatureIdx.RESOURCES],
             pad_width=((pad, pad), (pad, pad)),
             mode="constant",
             constant_values=0.0,
@@ -238,7 +238,7 @@ class CSSMovementsEnv(ParallelEnv):
 
         # World features
         self.geo_features = np.zeros((self.F_GEO, self.H, self.W), dtype=np.float32)
-        self._init_exponential(self.geo_features[FeatureKey.RESOURCES], INIT_RESOURCE_GAMMA)
+        self._init_exponential(self.geo_features[GeoFeatureIdx.RESOURCES], INIT_RESOURCE_GAMMA)
 
 
         ## Initialize world resources
@@ -298,7 +298,7 @@ class CSSMovementsEnv(ParallelEnv):
                 constant_values=0.0
             )
             geo_resources_padded = np.pad(
-                self.geo_features[FeatureKey.RESOURCES],
+                self.geo_features[GeoFeatureIdx.RESOURCES],
                 pad_width = ((pad,pad),(pad,pad)),
                 mode="constant",
                 constant_values=0.0
@@ -328,7 +328,7 @@ class CSSMovementsEnv(ParallelEnv):
 
     def _get_group_strength_total(self, g):
         total_occupancy = self.world_occupancy[g] # (H,W)
-        total_resources = self.geo_features[FeatureKey.RESOURCES] # (H,W)
+        total_resources = self.geo_features[GeoFeatureIdx.RESOURCES] # (H,W)
         strength = np.sum(total_occupancy*total_resources)
         return strength
 
@@ -379,70 +379,82 @@ class CSSMovementsEnv(ParallelEnv):
             MAX_OCCUPANCY_GAIN * occupancy, occupancy + max_absorption
         )
 
+    def _merge_cooperators(self, x, y, group_state_desc):
+        """
+        group_state_desc: list of states [g,strength,wants_conflict,is_alive]
+        Every group is alive at the beginning and doesn't want conflict.
+        Only those groups prefer conflict whose expected resource gain is high enough.
+        """
+        ## Keep index of strongest group that wants to cooperate
+        strongest_cooperator = -1
+        for i,(g,strength,_,_) in enumerate(group_state_desc):
+            # Simulate conflict against strongest other group
+            their_strength = group_state_desc[0][1]
+            if i == 0:
+                their_strength = group_state_desc[1][1]
+            expected_gain = self._group_conflict_expectation(x,y,g,strength,their_strength)
+            if expected_gain > 0:
+                # Group wants conflict
+                group_state_desc[i][2] = True # wants_conflict = True
+            else:
+                if strongest_cooperator < 0:
+                    strongest_cooperator = g
+                else:
+                    # Strongest cooperator takes all other cooperating groups
+                    self._group_merge_local(x,y,strongest_cooperator,g, conflict=False)
+                    # Set weaker group to inactive after merge with stronger group
+                    group_state_desc[i][3] = False # is_alive = False
+
     # ---------------------------------------------------------------------
     # Group interaction for collisions
     # ---------------------------------------------------------------------
     def group_interaction(self, x, y):
         """
-        Tournament mode at position (x, y):
-
-        1. Gather all non-zero group indices into an array a
-        2. Randomly permute that array a
-        3. Tournament:
-           - a[0] vs a[1], a[2] vs a[3], ...
-           - For each fight, compare strength, update as:
-             s1' = max(0, s1 - s2)
-             s2' = max(0, s2 - s1)
-           - Winner (if still non-zero) goes to next round
-           - Repeat until only one left with non-zero strength (or none)
+        Resolve collisions of groups at location x,y.
+        This function is only invoked for cells [x,y] with more than one group.
+        1a. Determine the groups that want to cooperate (cooperators) 
+        1b. Merge them into one the strongest cooperator group.
+        2. Execute conflicts between remaining groups 
         """
-        strengths = self.world_occupancy[:, x, y]
-        active_groups = np.nonzero(strengths > 0)[0]
-        if active_groups.size < 2:
-            return  # no collision
+        occupancy = self.world_occupancy[:, x, y] # (G,)
+        active_groups = np.nonzero(occupancy > 0)[0] 
+        group_state = [[g,self._get_group_strength_local(g),False,True] for g in active_groups]
+        # (group_index:int, group_strength:float, wants_conflict:bool, active:bool)
+        # Sort groups descending by strength
+        group_state_desc = sorted(group_state, key=lambda t:t[1], reverse=True)
+        
+        # Determine which groups want to cooperate and merge those groups
+        self._merge_cooperators(x,y,group_state_desc)
 
-        # TODO: Implement cooperation vs. conflict decision
+        # All cooperating groups have merged, now conflicts are executed
+        self._execute_conflicts(x,y,group_state_desc)
 
-        # Random tournament bracket
-        permuted = self.np_random.permutation(active_groups)
-        current = permuted.tolist()
-
-        # Dummy fight
-        while len(current) > 1:
-            next_round = []
-            # Pairwise fights
-            for i in range(0, len(current), 2):
-                if i + 1 >= len(current):
-                    # Odd one out advances automatically
-                    g_odd = current[i]
-                    if self._get_group_strength(g_odd, x, y) > 0:
-                        next_round.append(g_odd)
+    def _execute_conflicts(self, x,y,group_state_desc):
+        """
+        group_state_desc: list of states [g,strength,wants_conflict,is_alive]
+        Execute random order of 1v1 conflicts 
+        """
+        alive_groups_idx = [i for i,t in enumerate(group_state_desc) if t[3]]
+        alive_groups_idx = self.np_random.permutation(alive_groups_idx).tolist()
+        while len(alive_groups_idx) > 1:
+            still_alive = []
+            for i in range(0, len(alive_groups_idx), 2):
+                if i+1 >= len(alive_groups_idx):
+                    # Odd number of groups, no other group to fight, skip.
                     continue
-
-                g1 = current[i]
-                g2 = current[i + 1]
-
-                s1 = self._get_group_strength(g1, x, y)
-                s2 = self._get_group_strength(g2, x, y)
-
-                # Resolve fight
-                new_s1 = max(0, s1 - s2)
-                new_s2 = max(0, s2 - s1)
-
-                self._set_group_strength(g1, x, y, new_s1)
-                self._set_group_strength(g2, x, y, new_s2)
-
-                # Winner (if non-zero) advances
-                if new_s1 > new_s2 and new_s1 > 0:
-                    next_round.append(g1)
-                elif new_s2 > new_s1 and new_s2 > 0:
-                    next_round.append(g2)
-                # if equal & both zero -> no one advances
-
-            current = next_round
-
-        # At the end, either 0 or 1 non-zero group remains at (x, y)
-        # In either case, world_occupancy is already updated.
+                i1 = alive_groups_idx[i]
+                i2 = alive_groups_idx[i+1]
+                g1 = group_state_desc[i1][0]
+                g2 = group_state_desc[i2][0]
+                # Execute conflict and update occupancy
+                winner = self._group_merge_local(x,y,g1,g2,conflict=True)
+                if winner == g1:
+                    still_alive.append(i1)
+                    group_state_desc[i2][3] = False # mark g2 dead
+                else:
+                    still_alive.append(i2)
+                    group_state_desc[i1][3] = False # mark g1 dead
+            alive_groups_idx = still_alive
     
     def _group_merge_local(self, x, y, g1:int, g2:int, conflict:bool):
         """
@@ -453,15 +465,62 @@ class CSSMovementsEnv(ParallelEnv):
         B = self._get_group_strength_local(g2, x, y)
         g1_win_probability = A / (A+B)
         winner, loser = g2, g1
+        # strength_ratio = strength_winner / strength_loser
+        strength_ratio = B/A 
         if np.random.uniform() < g1_win_probability:
             winner, loser = g1, g2
+            strength_ratio = 1/strength_ratio
         if conflict:
-            self.world_occupancy[winner][x][y] = max(0.0, self.world_occupancy[winner][x][y]-self.world_occupancy[loser][x][y])
+            self.world_occupancy[winner][x][y] = (
+                (1-np.exp(-strength_ratio)) * self.world_occupancy[winner][x][y]
+            )
         else:
-            self.world_occupancy[winner][x][y] = self.world_occupancy[winner][x][y]+self.world_occupancy[loser][x][y]
+            self.world_occupancy[winner][x][y] = (
+                self.world_occupancy[winner][x][y]+self.world_occupancy[loser][x][y]
+            )
         self.world_occupancy[loser][x][y] = 0.0
         return winner
+    
+    def _group_conflict_expectation(self, x, y, g1:int, g2:int):
+        """
+        Compute expected benefit of group g1 fighting g2 in [x,y].
+        """
+        A = self._get_group_strength_local(g1, x, y)
+        B = self._get_group_strength_local(g2, x, y)
+        g1_win_probability = A / (A+B)
 
+        strength_ratio = A/B 
+        gain_win = (
+            MAX_OCCUPANCY_GAIN*(1-np.exp(-strength_ratio))*self.world_occupancy[g1,x,y]
+            * self.geo_features[GeoFeatureIdx.RESOURCES,x,y]
+        )
+        gain_lose = (
+            -self.geo_features[GeoFeatureIdx.RESOURCES,x,y] 
+            * self.world_occupancy[g1,x,y]
+        )
+        expected_gain = g1_win_probability*gain_win + (1-g1_win_probability)*gain_lose
+        return expected_gain
+    
+    def _group_conflict_expectation(self, x, y, g:int, my_strength, their_strength):
+        """
+        Compute expected benefit of group g1 fighting g2 in [x,y].
+        """
+        A = self._get_group_strength_local(g1, x, y)
+        B = self._get_group_strength_local(g2, x, y)
+        g1_win_probability = A / (A+B)
+        
+        strength_ratio = A/B 
+        gain_win = (
+            MAX_OCCUPANCY_GAIN*(1-np.exp(-strength_ratio))*self.world_occupancy[g1,x,y]
+            * self.geo_features[GeoFeatureIdx.RESOURCES,x,y]
+        )
+        gain_lose = (
+            -self.geo_features[GeoFeatureIdx.RESOURCES,x,y] 
+            * self.world_occupancy[g1,x,y]
+        )
+        expected_gain = g1_win_probability*gain_win + (1-g1_win_probability)*gain_lose
+        return expected_gain
+    
 
     def _move_resources(self, actions):
         """
@@ -475,6 +534,9 @@ class CSSMovementsEnv(ParallelEnv):
 
             # Occupancy ratios for the current group
             g_occupancy = self.world_occupancy[g]  # (H,W)
+            if not np.any(g_occupancy > 0):
+                # Group doesn't exist anymore
+                continue
 
             # Ratio for each direction
             ratio_sum = np.sum(ratios, axis=-1)  # (H,W)

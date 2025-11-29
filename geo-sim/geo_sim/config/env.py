@@ -27,4 +27,4 @@ MASK_RADIUS = 10
 
 # World Dynamics
 ## Occupancy
-MAX_OCCUPANCY_GAIN = 2.00
+MAX_OCCUPANCY_GAIN = 1.50
