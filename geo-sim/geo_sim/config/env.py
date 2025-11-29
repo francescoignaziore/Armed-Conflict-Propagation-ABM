@@ -1,7 +1,10 @@
+import numpy as np
 SEED = 31919
 
 # Initialization
-MAX_INIT_VAL = 255
+INIT_MAX_VAL = 255
+INIT_RESOURCE_GAMMA = np.log(INIT_MAX_VAL)/INIT_MAX_VAL
+# That way P(0) will be INIT_MAX_VAL times more likely than INIT_MAX_VAL
 
 # Observations
 ## Keys for observation dictionary
