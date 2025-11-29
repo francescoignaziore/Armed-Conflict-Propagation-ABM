@@ -19,6 +19,8 @@ from geo_sim.config.env import (
     KEY_OBS_OCCUPANCY,
     KEY_OBS_FEATURES_GROUP,
 )
+# Actions
+from geo_sim.config.env import ActionIdx
 # World dynamics
 from geo_sim.config.env import MAX_OCCUPANCY_GAIN, MASK_RADIUS
 # Geo/Group Features
@@ -485,11 +487,11 @@ class CSSMovementsEnv(ParallelEnv):
                 # NOTE (L): Div by zero cannot occur here, by definition of rescale_mask
                 ratios[rescale_mask] /= ratio_sum[rescale_mask]
 
-            ratio_up = ratios[:, :, 0]  # (H,W)
-            ratio_right = ratios[:, :, 1]  # (H,W)
-            ratio_down = ratios[:, :, 2]  # (H,W)
-            ratio_left = ratios[:, :, 3]  # (H,W)
-            ratio_stay = ratios[:, :, 4]  # (H,W)
+            ratio_up = ratios[:, :, ActionIdx.UP]  # (H,W)
+            ratio_right = ratios[:, :, ActionIdx.RIGHT]  # (H,W)
+            ratio_down = ratios[:, :, ActionIdx.DOWN]  # (H,W)
+            ratio_left = ratios[:, :, ActionIdx.LEFT]  # (H,W)
+            ratio_stay = ratios[:, :, ActionIdx.STAY]  # (H,W)
 
             ## 1. Groups move their resources
             g_resources = (
