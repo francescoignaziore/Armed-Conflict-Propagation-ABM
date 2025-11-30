@@ -47,11 +47,11 @@ class FeatureSpec:
 FEATURES_SPEC: dict[FeatureKey, FeatureSpec] = {
     FeatureKey.RESOURCES: FeatureSpec(
         geo=GeoFeatureSpec(index=GeoFeatureIdx.RESOURCES, is_absorbable=True),
-        grp=GeoFeatureSpec(index=GrpFeatureIdx.RESOURCES, is_absolute=True)
+        grp=GrpFeatureSpec(index=GrpFeatureIdx.RESOURCES, is_absolute=True, is_quantitative=True)
     ),
     # FeatureKey.PEOPLE: FeatureSpec(
     #     geo=GeoFeatureSpec(index=GeoFeatureIdx.PEOPLE, is_absorbable=True),
-    #     grp=GeoFeatureSpec(index=GrpFeatureIdx.PEOPLE, is_absolute=True)
+    #     grp=GrpFeatureSpec(index=GrpFeatureIdx.PEOPLE, is_absolute=True)
     # ),
     # FeatureKey.IS_VALID: FeatureSpec(
     #     geo=GeoFeatureSpec(index=GeoFeatureIdx.IS_VALID, is_absorbable=False),
