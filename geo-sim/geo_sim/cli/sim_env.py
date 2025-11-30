@@ -23,7 +23,7 @@ def group_policy(env, obs, info, group, compute_padding=True):
     cell_occupancy = obs[KEY_OBS_OCCUPANCY]          # (G, H, W), np.float32 in [0,1]
     cell_features  = obs[KEY_OBS_FEATURES_LOCATION]  # (F_W, H, W), np.float32
     group_features = obs[KEY_OBS_FEATURES_GROUP]     # (G, F_G), np.float32 (per-group features)
-    i_group = env._agent_index(group)                # int
+    i_group = env._group_index(group)                # int
 
     # Default: Assign ACTION_VALUE_DEFAULT to all movement direction logits.
     # For occupied cells, these defaults will be overriden 
@@ -160,15 +160,11 @@ def _convert_to_action_probabilities(action):
     action_weights[ActionIdx.UP]    -= min(0.0, action[ActionIdx.DOWN])
     action_weights[ActionIdx.DOWN]  -= min(0.0, action[ActionIdx.UP])
 
-    action_weights[ActionIdx.STAY]  = max(0.0, action[ActionIdx.STAY]) 
-    action_weights[ActionIdx.RIGHT] = max(0.0, action_weights[ActionIdx.RIGHT])
-    action_weights[ActionIdx.LEFT]  = max(0.0, action_weights[ActionIdx.LEFT])
-    action_weights[ActionIdx.UP]    = max(0.0, action_weights[ActionIdx.UP])
-    action_weights[ActionIdx.DOWN]  = max(0.0, action_weights[ActionIdx.DOWN])
-
+    action_weights = np.maximum(0.0, action_weights)
     # Linear normalization
-    action_weight_sum = np.sum(action)
-    action[:] /= action_weight_sum
+    action_weight_sum = np.sum(action_weights)
+    assert action_weight_sum > 0, f"action_weight_sum: {action_weight_sum}, action_weights:{action_weights}"
+    action[:] = action_weights/action_weight_sum
 
 def _get_group_strength_ratio_weight(strength_g1, strength_g2):
     return 1.0 - strength_g1/strength_g2

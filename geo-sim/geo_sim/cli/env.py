@@ -73,7 +73,7 @@ class CSSMovementsEnv(ParallelEnv):
         self.world_ruggedness = None  # (H, W, 4)
         self.geo_features = None     # (F_GEO, H, W)
         self.grp_features = None     # (G, F_GRP)
-        self.geo_grp_features = None # (G, F_GEO_GRP, H, W)
+        self.geo_grp_features = None # (F_GEO_GRP, G, H, W)
 
         # Group union structure
         self.group_mother = None
@@ -205,7 +205,7 @@ class CSSMovementsEnv(ParallelEnv):
         ).astype(arr.dtype, copy=False)
 
     def _init_exponential(self, arr, gamma=1.0):
-        self.np_random.exponential(scale=1/gamma, size=arr.shape, out=arr)
+        arr[:] = self.np_random.exponential(scale=1/gamma, size=arr.shape)
 
     # ---------------------------------------------------------------------
     # PettingZoo API: reset
@@ -230,6 +230,7 @@ class CSSMovementsEnv(ParallelEnv):
         self.world_occupancy = np.zeros((self.G, self.H, self.W), dtype=np.float32)
         group_indices = np.arange(self.G)
         self.world_occupancy[group_indices, self.group_init_x, self.group_init_y] = ABSORPTION_INIT
+        assert np.all(self.world_occupancy >= 0), f"{np.sum(np.nonzero(self.world_occupancy < 0))} negative values in self.world_occupancy"
 
         ## Reset group union structure
         self.group_mother = np.arange(self.G, dtype=np.int32)
@@ -241,7 +242,6 @@ class CSSMovementsEnv(ParallelEnv):
         # World features
         self.geo_features = np.zeros((self.F_GEO, self.H, self.W), dtype=np.float32)
         self._init_exponential(self.geo_features[GeoFeatureIdx.RESOURCES], INIT_RESOURCE_GAMMA)
-
 
         ## Initialize world resources
         self.geo_features = self.np_random.integers(
@@ -255,6 +255,9 @@ class CSSMovementsEnv(ParallelEnv):
         self.grp_features = self.np_random.integers(
             low=0, high=INIT_MAX_VAL + 1, size=(self.G, self.F_GRP), dtype=np.int32
         ).astype(np.float32)
+
+        # Geo group features
+        self.geo_grp_features = np.zeros((self.F_GEO_GRP, self.G, self.H, self.W), dtype=np.float32)
 
         # All agents active at reset
         self.agents = self.possible_agents[:]
@@ -363,7 +366,7 @@ class CSSMovementsEnv(ParallelEnv):
         return self._action_space
 
     def _get_absorption_rate(self, key: FeatureKey) -> float | None:
-        return FEATURES_SPEC.get(key).absorption_rate()
+        return FEATURES_SPEC.get(key).get_absorption_rate()
 
     def _resource_absorption(self):
         occupancy = self.world_occupancy  # (G,H,W)
@@ -423,7 +426,7 @@ class CSSMovementsEnv(ParallelEnv):
         """
         occupancy = self.world_occupancy[:, x, y] # (G,)
         active_groups = np.nonzero(occupancy > 0)[0] 
-        group_state = [[g,self._get_group_strength_local(g),False,True] for g in active_groups]
+        group_state = [[g,self._get_group_strength_local(g,x,y),False,True] for g in active_groups]
         # (group_index:int, group_strength:float, wants_conflict:bool, active:bool)
         # Sort groups descending by strength
         group_state_desc = sorted(group_state, key=lambda t:t[1], reverse=True)
@@ -570,22 +573,28 @@ class CSSMovementsEnv(ParallelEnv):
                 # Group doesn't exist anymore
                 continue
 
+            assert np.all(g_occupancy >= 0), f"{np.sum(np.nonzero(g_occupancy >= 0))} negative values in g_occupancy, group {g}"
+            assert np.all(g_occupancy <= 1), f"{np.sum(np.nonzero(g_occupancy <= 1))} values > 1 in g_occupancy, group {g}"
+            assert np.all(ratios >= 0), f"{np.sum(np.nonzero(ratios >= 0))} negative values in ratios, group {g}"
             # Ratio for each direction
-            ratio_sum = np.sum(ratios, axis=-1)  # (H,W)
+            ratio_sum = np.sum(ratios, axis=-1, keepdims=True)  # (H,W,1)
 
             ## 0. Assert that the five ratios sum to 1
             # assert ratio_sum <= 1, ratio_sum # NOTE (L): For debugging.
             # NOTE (L): We could enforce aswell ratio_sum == 1
-            rescale_mask = ratio_sum > 1
-            if np.any(rescale_mask):
-                # NOTE (L): Div by zero cannot occur here, by definition of rescale_mask
-                ratios[rescale_mask] /= ratio_sum[rescale_mask]
+            needs_rescale = ratio_sum > 1
+            if np.any(needs_rescale):
+                ratios = np.where(
+                    needs_rescale,
+                    ratios / ratio_sum,
+                    ratios
+                )
 
-            ratio_up = ratios[:, :, ActionIdx.UP]  # (H,W)
+            ratio_up    = ratios[:, :, ActionIdx.UP]  # (H,W)
             ratio_right = ratios[:, :, ActionIdx.RIGHT]  # (H,W)
-            ratio_down = ratios[:, :, ActionIdx.DOWN]  # (H,W)
-            ratio_left = ratios[:, :, ActionIdx.LEFT]  # (H,W)
-            ratio_stay = ratios[:, :, ActionIdx.STAY]  # (H,W)
+            ratio_down  = ratios[:, :, ActionIdx.DOWN]  # (H,W)
+            ratio_left  = ratios[:, :, ActionIdx.LEFT]  # (H,W)
+            ratio_stay  = ratios[:, :, ActionIdx.STAY]  # (H,W)
 
             ## 1. Groups move their resources
             g_resources = (
@@ -593,7 +602,7 @@ class CSSMovementsEnv(ParallelEnv):
             )  # (H,W), float32
             ### Store moved resources
             g_resources_next = self.geo_grp_features[
-                g, GeoGrpFeatureIdx.RESOURCES
+                GeoGrpFeatureIdx.RESOURCES, g
             ]  # (H,W)
 
             g_resources_next[:, :] = ratio_stay[:, :] * g_resources[:, :]  # (H,W)
@@ -607,29 +616,33 @@ class CSSMovementsEnv(ParallelEnv):
             g_resources_next[:, :-1] += ratio_left[:, 1:] * g_resources[:, 1:]
             # right: from (x, y) -> (x, y+1)
             g_resources_next[:, 1:] += ratio_right[:, :-1] * g_resources[:, :-1]
+            assert np.all(g_resources_next >= 0), f"{np.sum(np.nonzero(g_resources_next >= 0))} negative values in g_resources_next, group {g}"
 
         # 2. Update total resources and occupancy distribution of each cell
-        group_resources = self.geo_grp_features[
-            :, GeoGrpFeatureIdx.RESOURCES
-        ]  # (G,H,W)
+        group_resources = self.geo_grp_features[GeoGrpFeatureIdx.RESOURCES]  # (G,H,W)
+        assert np.all(group_resources >= 0), f"{np.sum(np.nonzero(group_resources >= 0))} negative values in group_resources"
         group_resources_total = np.sum(group_resources, axis=0)  # (H,W)
 
         ## Remaining geo resources that are not possessed by any group yet
         occupancy = self.world_occupancy  # (G,H,W)
-        occupancy_total = np.sum(occupancy, axis=0)  # (H,W)
+        occupancy_total = np.sum(occupancy, axis=0)  # (H,W) 
+        assert np.all(occupancy_total <= 1), f"{np.sum(np.nonzero(occupancy_total <= 1))} invalid values in occupancy_total"
         remaining = 1 - occupancy_total  # (H,W)
         remaining_geo_resources = (
             self.geo_features[GeoFeatureIdx.RESOURCES] * remaining
         )  # (H,W), float32
+        assert np.all(remaining_geo_resources >= 0), f"{np.sum(np.nonzero(remaining_geo_resources >= 0))} negative values in remaining_geo_resources"
         resources_total = group_resources_total + remaining_geo_resources  # (H,W)
 
         ## Overwrite geo resources with new resources after groups moved some of their resources
         self.geo_features[GeoFeatureIdx.RESOURCES] = resources_total
+        assert np.all(resources_total >= 0), f"{np.sum(np.nonzero(resources_total >= 0))} negative values in resources_total"
 
         ## Recompute occupancy ratios
         for agent in self.possible_agents:
             g = self._group_index(agent)
-            self.world_occupancy[g] = np.divide(
+            # In-place division
+            np.divide(
                 group_resources[g],
                 resources_total,
                 out=self.world_occupancy[g],
@@ -662,11 +675,14 @@ class CSSMovementsEnv(ParallelEnv):
             return {}, {}, {}, {}, {}
 
         self.time += 1
+        # print(f"[DEBUG]: World dynamics, t={self.time}") 
 
         # 1. Groups move their resources
+        # print("[DEBUG]: Move resources") 
         self._move_resources(actions)
 
         # 2. Group interaction
+        # print("[DEBUG]: Group interaction")
         # self._prepare_padded_views() # Precompute padding of grid observations once
         ## Resolve collisions: cells where ≥2 groups have non-zero occupancy
         is_occupied = self.world_occupancy > 0  # (G, H, W)
@@ -676,6 +692,7 @@ class CSSMovementsEnv(ParallelEnv):
             self.group_interaction(x, y)
 
         # 3. Resource absorption
+        # print("[DEBUG]: Resource absorption")
         self._resource_absorption()
 
         # Build return values (simple global observation, dummy rewards)
@@ -692,12 +709,13 @@ class CSSMovementsEnv(ParallelEnv):
     # ---------------------------------------------------------------------
     # Rendering & (pseudo) observation / action space accessors
     # ---------------------------------------------------------------------
-    def render(self, draw=False, use_mask=True):
+    def render(self, draw=False, use_mask=False):
+        print("[DEBUG]: Render")
         if draw==False:
             # Minimal textual render: sum occupancy per group
             print(f"Time step: {self.time}")
             for g in range(self.G):
-                total = int(self.world_occupancy[g].sum())
+                total = self.world_occupancy[g].sum()
                 print(f"  Group {g}: total strength = {total}")
             return
         resources = self.geo_features[GeoFeatureIdx.RESOURCES] # (H,W)
@@ -766,9 +784,9 @@ class CSSMovementsEnv(ParallelEnv):
 
     def _get_observation(self, agent):
         return {
-            KEY_OBS_OCCUPANCY: self.world_occupancy.copy(),
-            KEY_OBS_FEATURES_LOCATION: self.geo_features.copy(),
-            KEY_OBS_FEATURES_GROUP: self.grp_features.copy(),
+            KEY_OBS_OCCUPANCY: self.world_occupancy,
+            KEY_OBS_FEATURES_LOCATION: self.geo_features,
+            KEY_OBS_FEATURES_GROUP: self.grp_features,
         }
 
     def observation_space(self, agent):
