@@ -501,26 +501,6 @@ class CSSMovementsEnv(ParallelEnv):
         expected_gain = g1_win_probability*gain_win + (1-g1_win_probability)*gain_lose
         return expected_gain
     
-    def _group_conflict_expectation(self, x, y, g:int, my_strength, their_strength):
-        """
-        Compute expected benefit of group g1 fighting g2 in [x,y].
-        """
-        A = self._get_group_strength_local(g1, x, y)
-        B = self._get_group_strength_local(g2, x, y)
-        g1_win_probability = A / (A+B)
-        
-        strength_ratio = A/B 
-        gain_win = (
-            MAX_OCCUPANCY_GAIN*(1-np.exp(-strength_ratio))*self.world_occupancy[g1,x,y]
-            * self.geo_features[GeoFeatureIdx.RESOURCES,x,y]
-        )
-        gain_lose = (
-            -self.geo_features[GeoFeatureIdx.RESOURCES,x,y] 
-            * self.world_occupancy[g1,x,y]
-        )
-        expected_gain = g1_win_probability*gain_win + (1-g1_win_probability)*gain_lose
-        return expected_gain
-    
 
     def _move_resources(self, actions):
         """
