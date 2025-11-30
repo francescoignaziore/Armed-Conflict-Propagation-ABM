@@ -622,14 +622,13 @@ def init_grid(G: int, sampling_strategy=GroupInitStrategy.UNIFORM):
     # 1. Load Data
     tifs = TIFF_OUT_DIR.glob("*.tif")
     bank, master_mask = load_feature_bank(tifs)
-    H,W = master_mask.shape
     if not bank:
         print("No features found! Exiting.")
         return
 
     # 2. Sample groups
     N_samples = G
-    rows, cols = None
+    rows, cols = None, None
     if sampling_strategy==GroupInitStrategy.UNIFORM:
         ## 2a. Uniform
         rows, cols = sample_uniform(master_mask, N_samples)
@@ -651,7 +650,7 @@ def init_grid(G: int, sampling_strategy=GroupInitStrategy.UNIFORM):
     else:
         raise NotImplementedError()
     
-    return H,W,rows,cols
+    return master_mask,rows,cols
 
 def run_simulation(N_samples: int = 10000):
     """
