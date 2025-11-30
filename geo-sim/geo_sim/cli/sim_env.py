@@ -1,10 +1,14 @@
 import numpy as np
 from geo_sim.cli.env import CSSMovementsEnv
 # Obs constants
-from geo_sim.config.env import KEY_OBS_FEATURES_LOCATION, KEY_OBS_FEATURES_GROUP, KEY_OBS_OCCUPANCY
+from geo_sim.config.env import KEY_OBS_FEATURES_LOCATION, KEY_OBS_FEATURES_GROUP, KEY_OBS_OCCUPANCY, MASK_RADIUS
 # Action constants
-from geo_sim.config.env import ActionIdx, ACTION_VALUE_DEFAULT, MASK_RADIUS
-env = CSSMovementsEnv()
+from geo_sim.config.env import ActionIdx, ACTION_VALUE_DEFAULT
+# Init constants
+from geo_sim.config.env import N_GROUPS
+from geo_sim.cli.sim import init_grid
+from geo_sim.config.consts import GroupInitStrategy
+
 # Features
 from geo_sim.config.features import GeoFeatureIdx
 ## Feature accumulation kernels
@@ -13,9 +17,9 @@ from geo_sim.cli.spatial_accumulation import (
     get_gauss_dijkstra_kernel
 )
 
-observations, infos = env.reset()
 
-def group_policy(obs, info, group, compute_padding=True):
+
+def group_policy(env, obs, info, group, compute_padding=True):
     cell_occupancy = obs[KEY_OBS_OCCUPANCY]          # (G, H, W), np.float32 in [0,1]
     cell_features  = obs[KEY_OBS_FEATURES_LOCATION]  # (F_W, H, W), np.float32
     group_features = obs[KEY_OBS_FEATURES_GROUP]     # (G, F_G), np.float32 (per-group features)
@@ -71,12 +75,12 @@ def group_policy(obs, info, group, compute_padding=True):
 
         # Override default action with actual behaviour
         local_group_policy(
-            action[h, w], masked_occupancy, masked_features, group_features, i_group, h, w
+            env, action[h, w], masked_occupancy, masked_features, group_features, i_group, h, w
         )
 
     return action
 
-def local_group_policy(action, masked_occupancy, masked_features, group_features, i_group, h, w):
+def local_group_policy(env, action, masked_occupancy, masked_features, group_features, i_group, h, w):
     # action: shape (5), write your action there
     # masked_occupancy: (G, D_MASK, D_MASK), masked occupancy information
     # masked_features: (F_W, D_MASK, D_MASK), masked location features
@@ -169,27 +173,30 @@ def _convert_to_action_probabilities(action):
 def _get_group_strength_ratio_weight(strength_g1, strength_g2):
     return 1.0 - strength_g1/strength_g2
 
-done = False
-while True:
-    # 1. Get actions from each agent’s policy
-    actions = {}
-    base_group = env.agents[0]
-    obs = observations[base_group]
-    info = infos[base_group]
+def simulate_resource_conflict():
+    country_mask, group_init_x, group_init_y = init_grid(N_GROUPS, sampling_strategy=GroupInitStrategy.POP_VIIRS_ROADS)
+    env = CSSMovementsEnv(country_mask, group_init_x, group_init_y)
+    observations, infos = env.reset()
+    while True:
+        # 1. Get actions from each agent’s policy
+        actions = {}
+        base_group = env.agents[0]
+        obs = observations[base_group]
+        info = infos[base_group]
 
-    # Precompute padding once
-    env._prepare_padded_views(pad=MASK_RADIUS)
-    for agent in env.agents:              
-        obs = observations[agent]
-        info = infos[agent]
-        actions[agent] = group_policy(obs, info, agent)
+        # Precompute padding once
+        env._prepare_padded_views(pad=MASK_RADIUS)
+        for agent in env.agents:              
+            obs = observations[agent]
+            info = infos[agent]
+            actions[agent] = group_policy(env, obs, info, agent)
 
-    # 2. Step the environment with those actions
-    observations, rewards, terminations, truncations, infos = env.step(actions)
+        # 2. Step the environment with those actions
+        observations, rewards, terminations, truncations, infos = env.step(actions)
 
-    # 3. Optional: render / log / train
-    env.render()
+        # 3. Optional: render / log / train
+        env.render()
 
-    # 4. Check if episode is over
-    if any(terminations.values()) or all(truncations.values()):
-        break
+        # 4. Check if episode is over
+        if any(terminations.values()) or all(truncations.values()):
+            break
