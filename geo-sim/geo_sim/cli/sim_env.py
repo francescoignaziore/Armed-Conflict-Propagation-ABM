@@ -92,10 +92,10 @@ def local_group_policy(action, masked_occupancy, masked_features, group_features
     diag2 = I-J
 
     direction_masks = np.zeros((4,D_MASK,D_MASK),dtype=bool)
-    direction_masks[ActionIdx.UP]    = (diag1<0) & (diag2<0)
-    direction_masks[ActionIdx.LEFT]  = (diag1<0) & (diag2>0)
-    direction_masks[ActionIdx.RIGHT] = (diag1>0) & (diag2<0)
-    direction_masks[ActionIdx.DOWN]  = (diag1>0) & (diag2>0)
+    direction_masks[ActionIdx.UP]    = (diag1<=0) & (diag2<=0)
+    direction_masks[ActionIdx.LEFT]  = (diag1<=0) & (diag2>=0)
+    direction_masks[ActionIdx.RIGHT] = (diag1>=0) & (diag2<=0)
+    direction_masks[ActionIdx.DOWN]  = (diag1>=0) & (diag2>=0)
     # The above vectorized version is equivalent to this scalar code:
     # for i in range(D_MASK):
     #     for j in range(D_MASK):
@@ -151,11 +151,16 @@ def local_group_policy(action, masked_occupancy, masked_features, group_features
 def _convert_to_action_probabilities(action):
     # Redirect negative action flows into the opposite direction
     action_weights = np.copy(action)
-    action_weights[ActionIdx.STAY]  -= min(0.0, action[ActionIdx.STAY]) # Equivalent to max(0.0, ...)
     action_weights[ActionIdx.RIGHT] -= min(0.0, action[ActionIdx.LEFT])
     action_weights[ActionIdx.LEFT]  -= min(0.0, action[ActionIdx.RIGHT])
     action_weights[ActionIdx.UP]    -= min(0.0, action[ActionIdx.DOWN])
     action_weights[ActionIdx.DOWN]  -= min(0.0, action[ActionIdx.UP])
+
+    action_weights[ActionIdx.STAY]  = max(0.0, action[ActionIdx.STAY]) 
+    action_weights[ActionIdx.RIGHT] = max(0.0, action_weights[ActionIdx.RIGHT])
+    action_weights[ActionIdx.LEFT]  = max(0.0, action_weights[ActionIdx.LEFT])
+    action_weights[ActionIdx.UP]    = max(0.0, action_weights[ActionIdx.UP])
+    action_weights[ActionIdx.DOWN]  = max(0.0, action_weights[ActionIdx.DOWN])
 
     # Linear normalization
     action_weight_sum = np.sum(action)
