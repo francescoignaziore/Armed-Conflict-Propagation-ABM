@@ -1,8 +1,9 @@
-import functools
-import random
-from copy import copy
-
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.colors import hsv_to_rgb
+import os
+from datetime import datetime
+
 from gymnasium.spaces import Box
 
 from pettingzoo import ParallelEnv
@@ -19,10 +20,12 @@ from geo_sim.config.env import (
     KEY_OBS_OCCUPANCY,
     KEY_OBS_FEATURES_GROUP,
 )
+# Paths
+from geo_sim.config.paths import OUTPUT_DATA_DIR
 # Actions
 from geo_sim.config.env import ActionIdx
 # World dynamics
-from geo_sim.config.env import MAX_OCCUPANCY_GAIN, MASK_RADIUS
+from geo_sim.config.env import MAX_OCCUPANCY_GAIN, MASK_RADIUS, ConflictStrategy
 # Geo/Group Features
 from geo_sim.config.features import (
     FEATURES_SPEC,
@@ -44,24 +47,28 @@ class CSSMovementsEnv(ParallelEnv):
         "name": "css_movements_v0",
     }
 
-    def __init__(self, G, H, W, seed=SEED):
+    def __init__(self, country_mask, group_init_x, group_init_y, seed=SEED):
         """
         G   : number of groups (agents)
         H,W : grid height/width
         F_GRP : features per group
         F_GEO : features per world cell
         """
-        self.G = G
-        self.H = H
-        self.W = W
+        self.H, self.W = country_mask.shape # (H,W)
+        self.G = len(group_init_x)
+        self.country_mask = country_mask
+        self.group_init_x = group_init_x
+        self.group_init_y = group_init_y
         self.F_GRP = len(GrpFeatureIdx)
         self.F_GEO = len(GeoFeatureIdx)
         self.F_GEO_GRP = len(GeoGrpFeatureIdx)
 
         self.time = None
         self.seed = seed
+        self.run_id = datetime.now().strftime("%Y%m%d%H%M%S")
 
         # World state
+        self.country_mask = None # (H,W)
         self.world_occupancy = None  # (G, H, W)
         self.world_ruggedness = None  # (H, W, 4)
         self.geo_features = None     # (F_GEO, H, W)
@@ -219,15 +226,10 @@ class CSSMovementsEnv(ParallelEnv):
 
         self.time = 0
 
-        # Spawn each group on one location on the grid
-        H,W, group_init_x, group_init_y = init_grid(self.G, sampling_strategy=GroupInitStrategy.POP_VIIRS_ROADS)
-        self.H = H
-        self.W = W
-        
-        ## Initialize occupancy
+        ## Initialize occupancy (spawn groups)
         self.world_occupancy = np.zeros((self.G, self.H, self.W), dtype=np.float32)
         group_indices = np.arange(self.G)
-        self.world_occupancy[group_indices, group_init_x, group_init_y] = ABSORPTION_INIT
+        self.world_occupancy[group_indices, self.group_init_x, self.group_init_y] = ABSORPTION_INIT
 
         ## Reset group union structure
         self.group_mother = np.arange(self.G, dtype=np.int32)
@@ -387,12 +389,15 @@ class CSSMovementsEnv(ParallelEnv):
         """
         ## Keep index of strongest group that wants to cooperate
         strongest_cooperator = -1
+        sum_strengths = np.sum([strength for (g,strength,_,_) in group_state_desc])
+        num_competitors = len(group_state_desc)
+        expected_num_fights = np.log2(num_competitors)
+
         for i,(g,strength,_,_) in enumerate(group_state_desc):
             # Simulate conflict against strongest other group
-            their_strength = group_state_desc[0][1]
-            if i == 0:
-                their_strength = group_state_desc[1][1]
-            expected_gain = self._group_conflict_expectation(x,y,g,strength,their_strength)
+            avg_strength_other = (sum_strengths-strength) / (num_competitors-1)
+            expected_strength_opponent = expected_num_fights * avg_strength_other
+            expected_gain = self._group_conflict_expectation(x,y,g,strength,expected_strength_opponent)
             if expected_gain > 0:
                 # Group wants conflict
                 group_state_desc[i][2] = True # wants_conflict = True
@@ -429,7 +434,50 @@ class CSSMovementsEnv(ParallelEnv):
         # All cooperating groups have merged, now conflicts are executed
         self._execute_conflicts(x,y,group_state_desc)
 
-    def _execute_conflicts(self, x,y,group_state_desc):
+    def _execute_conflicts(self, x,y,group_state_desc, conflict_strategy=ConflictStrategy.UNIFORM):
+        if conflict_strategy == ConflictStrategy.TOURNAMENT:
+            self._execute_conflicts_tournament(x,y,group_state_desc)
+        elif conflict_strategy == ConflictStrategy.UNIFORM:
+            self._execute_conflicts_uniform(x,y,group_state_desc)
+
+    def _execute_conflicts_uniform(self, x,y,group_state_desc):
+        """
+        group_state_desc: list of states [g,strength,wants_conflict,is_alive]
+        Sample winner with probability proportional to their strength
+        """ 
+        alive_groups = [
+            [i,g,strength] for i,(g,strength,wants_conflict,is_alive) in enumerate(group_state_desc) if is_alive
+            ]
+        # Determine winner
+        sum_strengths = np.sum([strength for i,g,strength in alive_groups])
+        p = self.np_random.uniform(low=0.0, high=1.0) # [0,1)
+        current_interval_end = 1.0 # Start from right to ensure that while loop executes
+        current_group = -1
+        i = -1
+        while current_interval_end > p:
+            i+=1
+            _, current_group, current_strength = alive_groups[i]
+            current_interval_end -= current_strength/sum_strengths
+        winner = current_group
+        num_competitors = len(alive_groups)
+        avg_strength = sum_strengths/num_competitors
+        # Compute the expected strengths of the opponents that the winner group would face
+        #  in a random tournament tree order
+        expected_num_fights = np.log2(num_competitors)
+        expected_opponent_strength_sum = expected_num_fights * avg_strength 
+        winner_strength_ratio = current_strength / (current_strength + expected_opponent_strength_sum)
+
+        self.world_occupancy[winner][x][y] = (
+                (1-np.exp(-winner_strength_ratio)) * self.world_occupancy[winner][x][y]
+            )
+        
+        # Zero occupancy of loser groups
+        for _, g, _ in alive_groups:
+            if g == winner:
+                continue
+            self.world_occupancy[g][x][y] = 0
+
+    def _execute_conflicts_tournament(self, x,y,group_state_desc):
         """
         group_state_desc: list of states [g,strength,wants_conflict,is_alive]
         Execute random order of 1v1 conflicts 
@@ -481,22 +529,26 @@ class CSSMovementsEnv(ParallelEnv):
         self.world_occupancy[loser][x][y] = 0.0
         return winner
     
-    def _group_conflict_expectation(self, x, y, g1:int, g2:int):
+    def _group_conflict_expectation(self, x, y, g1, our_strength, their_strength):
         """
         Compute expected benefit of group g1 fighting g2 in [x,y].
         """
-        A = self._get_group_strength_local(g1, x, y)
-        B = self._get_group_strength_local(g2, x, y)
+        A = our_strength
+        B = their_strength
         g1_win_probability = A / (A+B)
 
         strength_ratio = A/B 
+        occupancy_ratio_before = 1.0
+        occupancy_ratio_after_win = MAX_OCCUPANCY_GAIN * (1.0-np.exp(-strength_ratio))
         gain_win = (
-            MAX_OCCUPANCY_GAIN*(1-np.exp(-strength_ratio))*self.world_occupancy[g1,x,y]
+            (occupancy_ratio_after_win-occupancy_ratio_before)
+            * self.world_occupancy[g1,x,y]
             * self.geo_features[GeoFeatureIdx.RESOURCES,x,y]
         )
         gain_lose = (
-            -self.geo_features[GeoFeatureIdx.RESOURCES,x,y] 
+            (0-occupancy_ratio_before)
             * self.world_occupancy[g1,x,y]
+            * self.geo_features[GeoFeatureIdx.RESOURCES,x,y] 
         )
         expected_gain = g1_win_probability*gain_win + (1-g1_win_probability)*gain_lose
         return expected_gain
@@ -640,12 +692,77 @@ class CSSMovementsEnv(ParallelEnv):
     # ---------------------------------------------------------------------
     # Rendering & (pseudo) observation / action space accessors
     # ---------------------------------------------------------------------
-    def render(self):
-        # Minimal textual render: sum occupancy per group
-        print(f"Time step: {self.time}")
+    def render(self, draw=False, use_mask=True):
+        if draw==False:
+            # Minimal textual render: sum occupancy per group
+            print(f"Time step: {self.time}")
+            for g in range(self.G):
+                total = int(self.world_occupancy[g].sum())
+                print(f"  Group {g}: total strength = {total}")
+            return
+        resources = self.geo_features[GeoFeatureIdx.RESOURCES] # (H,W)
+        country_mask = self.country_mask if use_mask else np.ones((self.H,self.W),dtype=bool)
+        H, W = self.H, self.W
+
+        resources_norm = np.clip(resources / (INIT_MAX_VAL), 0.0,1.0) # normalize and clip to [0,1]
+        # NOTE(L): Over the simulation, resources might grow beyond INIT_MAX_VAL, those are clipped here!
+        bg = resources_norm.copy()
+        bg[~country_mask] = np.nan
+
+        downscale = 2
+        offset = 1/downscale
+        fig, ax = plt.subplots(figsize=(W/downscale,H/downscale))
+        
+        # Square heatmap displays resource density over time
+        ax.imshow(
+            bg,
+            cmap="gray",
+            vmin=0.0,
+            vmax=1.0,
+            origin="upper", # (0,0) is top left
+            extent=(-offset, W-offset, H-offset, -offset),
+        )
+
+        # Colored circles display group density over time
         for g in range(self.G):
-            total = int(self.world_occupancy[g].sum())
-            print(f"  Group {g}: total strength = {total}")
+            g_occupancy = self.world_occupancy[g] # (H,W)
+            occupied_and_within_bounds = country_mask & (g_occupancy > 0)
+            if not np.any(occupied_and_within_bounds):
+                continue
+
+            xs, ys = np.nonzero(occupied_and_within_bounds)
+
+            # Hue = group index
+            hue_val = g/max(1,self.G)
+            # Saturation is proportial to occupancy
+            saturation = g_occupancy[occupied_and_within_bounds]
+            value = np.ones_like(saturation)
+            hue = np.full_like(saturation, hue_val)
+
+            hsv = np.stack([hue, saturation, value], axis=1) # (N_OCCUPIED, 3)
+            rgb = hsv_to_rgb(hsv)
+
+            ax.scatter(
+                ys, # Cartesian coordinates, y needs to come first!
+                xs,
+                s=40,
+                c=rgb,
+                marker="o",
+                edgecolors="black",
+                linewidths=offset,
+            )
+
+        ax.set_xlim(-offset, W-offset)
+        ax.set_ylim(H-offset, -offset) # invert y, [0,0] is top left
+        ax.set_title(f"Resource/Group distribution, t={self.time}")
+        ax.axis("off")
+
+        out_dir = OUTPUT_DATA_DIR / "resource_conflict_state" / self.run_id
+        os.makedirs(out_dir, exist_ok=True)
+        fname = f"state_t={self.time}.png"
+        fig.tight_layout()
+        fig.savefig(out_dir / fname, 150)
+        plt.close(fig)
 
     def _get_observation(self, agent):
         return {
