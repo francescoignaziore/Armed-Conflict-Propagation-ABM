@@ -1,5 +1,4 @@
 # geo_sim/config/consts.py
-from enum import Enum, auto
 # Target projected CRS for night lights (meters)
 OUTPUT_CRS_NIGHT_LIGHTS = "EPSG:3857"  # or your preferred equal-area CRS
 
@@ -7,30 +6,13 @@ OUTPUT_CRS_NIGHT_LIGHTS = "EPSG:3857"  # or your preferred equal-area CRS
 OUTPUT_AREA_CELL = 1_000_000.0
 
 
-GEO_FEATURES_DISTRIBUTION = ["pop"]
-# viirs
+GEO_FEATURES_DISTRIBUTION = ["viirs"]
+
 # Plotting
 # plotting constants
 _DPI = 220  # higher DPI for crisp grids
 _GRID_STEP = 0  # draw a line at every coarse cell (set 0 to disable)
 
-GEO_FEATURES_DISTRIBUTION = ["pop"]  # Legacy single run
-# New Multi-Strategy Configuration
-SIMULATION_COMBINATIONS = [
-    ["pop"],
-    ["pop", "viirs"],
-    ["roads"],
-    ["pop", "roads"],
-    ["pop", "viirs", "roads"],
-]
-
-class GroupInitStrategy(Enum):
-    UNIFORM = auto()
-    POP = auto()
-    POP_VIIRS = auto()
-    ROADS = auto()
-    POP_ROADS = auto()
-    POP_VIIRS_ROADS = auto()
 
 # --- tuneables (shp files) ---
 _SUPER_K = 1  # supersampling factor

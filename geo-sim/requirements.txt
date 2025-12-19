@@ -1,0 +1,10 @@
+geopandas 
+shapely 
+pyproj 
+affine 
+xarray 
+xarray-spatial
+dask # needed but not imported by xrspatial
+pyarrow # needed but not imported by xrspatial
+# xrspatial
+pettingzoo
