@@ -54,10 +54,3 @@ Quick reference of the available commands, you can run them in the order:
 1. Align the base rasters: `geo-sim tiff-alignment`.
 2. Convert each vector layer to raster form (`roads-to-tiff`, `natural-to-tiff`, etc.). 'building-to-tiff' stalls as of now, so do not run it. 
 3. Once the directory contains the rasters you care about, update the GEO_FEATURES_DISTRIBUTION with the names of the raster, e.g. pop, viirs, roads ... and call `geo-sim run-simulation --n-samples 2000` (or any other count) to build sampling distributions that are proportional to the raster values.
-
-### Git shortcuts
-#### Update your branch from `sim` branch
-```bash
-git branch -f lukas origin/sim # Branch `lukas` now tracks origin/sim
-git push origin lukas --force # Update the remote branch 
-```
