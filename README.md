@@ -1,9 +1,16 @@
 # Geo-Sim
+Geo-Sim leverages **geo**graphic features to **sim**ulate the establishment and diffusion of conflicts among armed groups in the Democratic Republic of Congo.
 
-Geo-Sim contains a small Python package plus command-line interface for aligning geospatial rasters, rasterizing OpenStreetMap-derived vector features, and sampling from the resulting feature stack for simulation studies over the Democratic Republic of Congo.
+We model groups as **agents** whose objective is to **maximize control** over resources.
+Drawing only on this assumption, we develop a family of simulation environments with configurable dynamics and demonstrate that complex diffusion dynamics arise across them. 
+
+# Setup
+Geo-Sim contains a small Python package plus a command-line interface for 
+1. aligning geospatial rasters, 
+2. rasterizing OpenStreetMap-derived vector features, and 
+3. executing simulations based on these features.
 
 ## Installation
-
 ```bash
 python -m venv .venv
 source .venv/bin/activate
@@ -13,14 +20,16 @@ pip install -e .
 pip install -r requirements.txt
 ```
 
-## Load data
+## Downloading geo data
 1. Download the data.zip from [polybox](https://polybox.ethz.ch/index.php/s/PP9CFEXdJ3Q5LG9)
 2. In Ubuntu:
 ```bash
 unzip data.zip -d ~/css/Armed-Conflict-Propagation-ABM/data/
 ```
 
+## Command-line overview
 
+# Extending the codebase
 ## Configuration
 
 - Edit `geo_sim/config/paths.py` when you want to:
@@ -47,10 +56,14 @@ Quick reference of the available commands, you can run them in the order:
 | `natural-to-tiff` | Rasterize natural features (forests, reserves, etc.). | `SHP_NATURAL_PATH`, aligned reference raster. | `natural_feats.tif` and PNG previews. |
 | `waters-to-tiff` | Rasterize water bodies to the shared grid. | `SHP_WATER_PATH`, aligned reference raster. | `waters_length_m.tif` and PNG previews. |
 | `landuse-to-tiff` | Rasterize land-use polygons to the shared grid. | `SHP_LANDUSE_PATH`, aligned reference raster. | `landuses_length_m.tif` and PNG previews. |
-| `run-simulation` | Stack the rasters selected by `GEO_FEATURES_DISTRIBUTION`, normalize them, and sample cells. | All rasters in `TIFF_OUT_DIR` whose stem matches the distribution list. | Plots in `data/output/tiffs/simulation_plots/` and printed sample statistics. |
+| `sample` | Stack the rasters selected by `GEO_FEATURES_DISTRIBUTION`, normalize them, and sample cells. | All rasters in `TIFF_OUT_DIR` whose stem matches the distribution list. | Plots in `data/output/tiffs/simulation_plots/` and printed sample statistics. |
+| `sim-resource-conflict` | Execute the purely resource-driven simulation. | - | Images in `data/output/resource_conflict_state/` visualize the environment state for each time step. |
 
 ### Typical workflow
 
 1. Align the base rasters: `geo-sim tiff-alignment`.
-2. Convert each vector layer to raster form (`roads-to-tiff`, `natural-to-tiff`, etc.). 'building-to-tiff' stalls as of now, so do not run it. 
-3. Once the directory contains the rasters you care about, update the GEO_FEATURES_DISTRIBUTION with the names of the raster, e.g. pop, viirs, roads ... and call `geo-sim run-simulation --n-samples 2000` (or any other count) to build sampling distributions that are proportional to the raster values.
+2. Convert each vector layer to raster form (`roads-to-tiff`, `natural-to-tiff`, etc.). 
+3. Once the directory contains the rasters you care about, update the GEO_FEATURES_DISTRIBUTION with the names of the raster, e.g. pop, viirs, roads ... and call `geo-sim sample --n-samples 2000` to sample coordinates from a distribution that is proportional to the raster values.
+4. Execute the simulations
+    - **Baseline simulation:** Execute `run_many.py` in the top-level folder.
+    - **Purely resource-driven simulation:** Run `geo-sim sim-resource-conflict` to execute an extended simulation that integrates resource maximization into more aspects of the world dynamics.
