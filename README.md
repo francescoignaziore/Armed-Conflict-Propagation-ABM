@@ -10,6 +10,7 @@ Geo-Sim contains a small Python package plus a command-line interface for
 2. rasterizing OpenStreetMap-derived vector features, and 
 3. executing simulations based on these features.
 
+
 ## Installation
 ```bash
 python -m venv .venv
@@ -26,19 +27,10 @@ pip install -r requirements.txt
 ```bash
 unzip data.zip -d ~/css/Armed-Conflict-Propagation-ABM/data/
 ```
+## Repository overview
+See [here](#repository-overview-1).
 
 ## Command-line overview
-
-# Extending the codebase
-## Configuration
-
-- Edit `geo_sim/config/paths.py` when you want to:
-  - Change the location of the repository (`ROOT`) and data folder (`DATA_DIR`).
-- Edit `geo_sim/config/consts.py` when you need to:
-  - Control which rasters the sampling distribution should account for via `GEO_FEATURES_DISTRIBUTION` (default is just 'viirs', that is night lights.)
-
-## CLI overview
-
 The CLI is powered by [Typer](https://typer.tiangolo.com/); general usage is:
 
 ```bash
@@ -67,3 +59,36 @@ Quick reference of the available commands, you can run them in the order:
 4. Execute the simulations
     - **Baseline simulation:** Execute `run_many.py` in the top-level folder.
     - **Purely resource-driven simulation:** Run `geo-sim sim-resource-conflict` to execute an extended simulation that integrates resource maximization into more aspects of the world dynamics.
+
+# Extending the codebase
+
+
+## Repository overview
+```
+geo_sim
+├── cli
+│   ├── __init__.py
+│   ├── app.py
+│   ├── buildings.py
+│   ├── env.py                              # Resource-driven simulation: Agent decision-making
+│   ├── landuse.py
+│   ├── natural.py
+│   ├── roads.py
+│   ├── sim.py                              # Sampling from geofeatures
+│   ├── sim_env.py                          # Resource-driven simulation: World dynamics
+│   ├── spatial_accumulation.py
+│   ├── tiff_alignment.py
+│   └── water.py
+└── config
+    ├── consts.py
+    ├── env.py                              # Resource-driven simulation: Configurable hyperparameters for simulation
+    ├── features.py                         # Resource-driven simulation: Configure resource features that the simulation is based upon
+    └── paths.py                            
+```
+
+## Configuration
+
+- Edit `geo_sim/config/paths.py` when you want to:
+  - Change the location of the repository (`ROOT`) and data folder (`DATA_DIR`).
+- Edit `geo_sim/config/consts.py` when you need to:
+  - Control which rasters the sampling distribution should account for via `GEO_FEATURES_DISTRIBUTION` (default is just 'viirs', that is night lights.)
