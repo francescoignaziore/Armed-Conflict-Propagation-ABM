@@ -36,7 +36,7 @@ app.command("landuse-to-tiff")(landuse_feats)
 
 from .sim import run_simulation
 
-app.command("run-simulation")(run_simulation)
+app.command("sample")(run_simulation)
 
 from .sim_env import simulate_resource_conflict
 app.command("sim-resource-conflict")(simulate_resource_conflict)
