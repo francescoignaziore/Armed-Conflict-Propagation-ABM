@@ -10,7 +10,7 @@ source .venv/bin/activate
 cd geo-sim
 pip install -e .
 # install extra spatial deps that are not declared in pyproject
-pip install geopandas shapely pyproj affine xarray xrspatial
+pip install -r requirements.txt
 ```
 
 ## Load data
