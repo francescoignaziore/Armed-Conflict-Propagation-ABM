@@ -14,7 +14,7 @@ pip install geopandas shapely pyproj affine xarray xrspatial
 ```
 
 ## Load data
-1. Download the data.zip from polybox
+1. Download the data.zip from [polybox](https://polybox.ethz.ch/index.php/s/PP9CFEXdJ3Q5LG9)
 2. In Ubuntu:
 ```bash
 unzip data.zip -d ~/css/Armed-Conflict-Propagation-ABM/data/
